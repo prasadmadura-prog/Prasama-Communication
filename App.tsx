@@ -14,15 +14,14 @@ import SalesHistory from './components/SalesHistory';
 import Settings from './components/Settings';
 import { loadCloudData, saveCloudData } from './services/database';
 
-const PERSISTENCE_KEY = 'prasama_erp_local_cache';
-const OLD_PERSISTENCE_KEY = 'prasama_erp_production_v1';
+const PERSISTENCE_KEY = 'prasama_erp_production_v5';
 
 const INITIAL_CATEGORIES: Category[] = [{ id: 'cat1', name: 'Beverages' }, { id: 'cat2', name: 'Accessories' }, { id: 'cat3', name: 'Tableware' }];
 const INITIAL_VENDORS: Vendor[] = [{ id: 'v1', name: 'Global Supply Co.', contactPerson: 'Alice Smith', email: 'alice@global.com', phone: '555-0101', address: '123 Supply Ln' }];
 const INITIAL_PRODUCTS: Product[] = [{ id: '1', name: 'Premium Coffee Beans', sku: 'COF-001', price: 25.0, cost: 12.0, stock: 45, categoryId: 'cat1', vendorId: 'v1', lowStockThreshold: 10 }];
 const INITIAL_ACCOUNTS: BankAccount[] = [{ id: 'cash', name: 'Main Cash Drawer', balance: 0.0 }, { id: 'bank', name: 'Commercial Bank', balance: 0.0 }];
 const INITIAL_CUSTOMERS: Customer[] = [{ id: 'c1', name: 'Starbucks NY', phone: '212-555-0199', email: 'billing@starbucks.com', address: 'Time Square, NYC', totalCredit: 0, creditLimit: 5000 }];
-const INITIAL_USER: UserProfile = { name: 'PRASAMA(PVT)LTD', branch: 'Main Branch v4.6' };
+const INITIAL_USER: UserProfile = { name: 'PRASAMA(PVT)LTD', branch: 'Main Branch v5.0' };
 
 const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -41,13 +40,12 @@ const App: React.FC = () => {
   const [daySessions, setDaySessions] = useState<DaySession[]>([]);
   const [posSession, setPosSession] = useState({ cart: [], discount: 0, discountPercent: 0, paymentMethod: 'CASH', search: '' });
 
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const saveTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const initData = async () => {
       const cloudData = await loadCloudData();
-      const local = localStorage.getItem(PERSISTENCE_KEY) || localStorage.getItem(OLD_PERSISTENCE_KEY);
+      const local = localStorage.getItem(PERSISTENCE_KEY);
       const source = cloudData || (local ? JSON.parse(local) : null);
 
       if (source) {
@@ -85,64 +83,6 @@ const App: React.FC = () => {
     return () => { if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current); };
   }, [products, categories, transactions, accounts, purchaseOrders, vendors, customers, userProfile, recurringExpenses, posSession, daySessions, isLoading]);
 
-  const handleExportData = () => {
-    const fullBackup = {
-      version: "4.6",
-      exportDate: new Date().toISOString(),
-      userProfile,
-      products,
-      categories,
-      transactions,
-      accounts,
-      purchaseOrders,
-      vendors,
-      customers,
-      recurringExpenses,
-      posSession,
-      daySessions
-    };
-    
-    const blob = new Blob([JSON.stringify(fullBackup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `PRASAMA_BACKUP_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target?.result as string);
-        if (confirm("RESTORE ALERT: This will replace ALL current data with the backup file. Proceed?")) {
-          if (Array.isArray(data.products)) setProducts(data.products);
-          if (Array.isArray(data.categories)) setCategories(data.categories);
-          if (Array.isArray(data.transactions)) setTransactions(data.transactions);
-          if (Array.isArray(data.accounts)) setAccounts(data.accounts);
-          if (Array.isArray(data.purchaseOrders)) setPurchaseOrders(data.purchaseOrders);
-          if (Array.isArray(data.vendors)) setVendors(data.vendors);
-          if (Array.isArray(data.customers)) setCustomers(data.customers);
-          if (data.userProfile) setUserProfile(data.userProfile);
-          if (Array.isArray(data.recurringExpenses)) setRecurringExpenses(data.recurringExpenses);
-          if (Array.isArray(data.daySessions)) setDaySessions(data.daySessions);
-          if (data.posSession) setPosSession(data.posSession);
-          
-          alert("Restore successful.");
-          setCurrentView('DASHBOARD');
-        }
-      } catch (err) {
-        alert("CRITICAL ERROR: Invalid backup file.");
-      }
-    };
-    reader.readAsText(file);
-  };
-
   const addTransaction = (partialTx: any) => {
     const tx: Transaction = {
       ...partialTx,
@@ -154,6 +94,7 @@ const App: React.FC = () => {
 
     setTransactions(prev => [tx, ...(Array.isArray(prev) ? prev : [])]);
 
+    // Financial balancing
     if (tx.paymentMethod !== 'CREDIT') {
       setAccounts(prev => (Array.isArray(prev) ? prev : []).map(acc => {
         const targetAccount = tx.paymentMethod === 'CASH' ? 'cash' : 'bank';
@@ -165,6 +106,7 @@ const App: React.FC = () => {
       }));
     }
 
+    // Customer Credit Management
     if (tx.customerId) {
       setCustomers(prev => (Array.isArray(prev) ? prev : []).map(c => {
         if (c.id === tx.customerId) {
@@ -175,6 +117,7 @@ const App: React.FC = () => {
       }));
     }
 
+    // Inventory Balancing
     if (tx.items && Array.isArray(tx.items) && (tx.type === 'SALE' || tx.type === 'PURCHASE')) {
       setProducts(prev => (Array.isArray(prev) ? prev : []).map(p => {
         const item = tx.items?.find((i: any) => i.productId === p.id);
@@ -184,9 +127,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateProduct = (p: Product) => {
-    setProducts(prev => prev.map(old => old.id === p.id ? p : old));
-  };
+  const handleUpdateProduct = (p: Product) => setProducts(prev => prev.map(old => old.id === p.id ? p : old));
 
   const handleOpenDay = (openingBalance: number) => {
     const date = new Date().toISOString().split('T')[0];
@@ -204,8 +145,7 @@ const App: React.FC = () => {
     const po = purchaseOrders.find(p => p.id === poId);
     if (!po || po.status === 'RECEIVED') return;
     const vendor = vendors.find(v => v.id === po.vendorId);
-    const receivedDate = new Date().toISOString();
-    setPurchaseOrders(prev => prev.map(p => p.id === poId ? { ...p, status: 'RECEIVED', receivedDate } : p));
+    setPurchaseOrders(prev => prev.map(p => p.id === poId ? { ...p, status: 'RECEIVED', receivedDate: new Date().toISOString() } : p));
     addTransaction({
       type: 'PURCHASE',
       amount: Number(po.totalAmount),
@@ -215,17 +155,13 @@ const App: React.FC = () => {
     });
   };
 
-  const upsertPurchaseOrder = (po: PurchaseOrder) => setPurchaseOrders(prev => prev.find(p => p.id === po.id) ? prev.map(p => p.id === po.id ? po : p) : [po, ...prev]);
-  const upsertVendor = (vendor: Vendor) => setVendors(prev => prev.find(v => v.id === vendor.id) ? prev.map(v => v.id === vendor.id ? vendor : v) : [vendor, ...prev]);
-  const upsertCustomer = (customer: Customer) => setCustomers(prev => prev.find(c => c.id === customer.id) ? prev.map(c => c.id === customer.id ? customer : c) : [customer, ...prev]);
-  const addCategory = (name: string) => setCategories(prev => [...prev, { id: `cat-${Date.now()}`, name }]);
-  const deleteCategory = (id: string) => products.some(p => p.categoryId === id) ? alert("Category in use!") : setCategories(prev => prev.filter(c => c.id !== id));
+  const activeSession = daySessions.find(s => s.date === new Date().toISOString().split('T')[0]);
 
   if (isLoading) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900">
         <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-        <p className="text-indigo-400 font-black uppercase tracking-widest text-[10px]">Initializing PRASAMA Enterprise Ledger...</p>
+        <p className="text-indigo-400 font-black uppercase tracking-widest text-[10px]">Initializing PRASAMA Strategic Suite...</p>
       </div>
     );
   }
@@ -234,23 +170,20 @@ const App: React.FC = () => {
     <div className="flex h-screen overflow-hidden bg-slate-50">
       <div className="no-print h-full flex-shrink-0 relative">
         <Sidebar currentView={currentView} setView={setCurrentView} userProfile={userProfile} onEditProfile={() => setCurrentView('SETTINGS')} />
-        <div className="absolute top-2 right-2 flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${syncStatus === 'SYNCING' ? 'bg-amber-400 animate-pulse' : syncStatus === 'ERROR' ? 'bg-rose-500' : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'}`} title={syncStatus}></div>
-        </div>
       </div>
       
       <main className="flex-1 overflow-y-auto relative bg-[#fcfcfc]">
         <div className="max-w-7xl mx-auto px-6 py-8 md:px-10 md:py-12">
             {currentView === 'DASHBOARD' && <Dashboard transactions={transactions} products={products} accounts={accounts} />}
-            {currentView === 'POS' && <POS products={products} customers={customers} categories={categories} userProfile={userProfile} onUpsertCustomer={upsertCustomer} onUpdateProduct={handleUpdateProduct} onCompleteSale={addTransaction} cashBalance={accounts.find(a => a.id === 'cash')?.balance || 0} posSession={posSession} setPosSession={setPosSession} />}
+            {currentView === 'POS' && <POS products={products} customers={customers} categories={categories} userProfile={userProfile} onUpsertCustomer={(c) => setCustomers(prev => [...prev.filter(old => old.id !== c.id), c])} onUpdateProduct={handleUpdateProduct} onCompleteSale={addTransaction} posSession={posSession} setPosSession={setPosSession} activeSession={activeSession} onGoToFinance={() => setCurrentView('FINANCE')} />}
             {currentView === 'SALES_HISTORY' && <SalesHistory transactions={transactions} products={products} customers={customers} userProfile={userProfile} />}
-            {currentView === 'INVENTORY' && <Inventory products={products} setProducts={setProducts} categories={categories} vendors={vendors} userProfile={userProfile} onAddCategory={addCategory} onDeleteCategory={deleteCategory} onUpsertVendor={upsertVendor} />}
+            {currentView === 'INVENTORY' && <Inventory products={products} setProducts={setProducts} categories={categories} vendors={vendors} userProfile={userProfile} onAddCategory={(name) => setCategories(prev => [...prev, {id: `cat-${Date.now()}`, name}])} onDeleteCategory={(id) => setCategories(prev => prev.filter(c => c.id !== id))} onUpsertVendor={(v) => setVendors(prev => [...prev.filter(old => old.id !== v.id), v])} />}
             {currentView === 'BARCODE_PRINT' && <BarcodePrint products={products} />}
-            {currentView === 'PURCHASES' && <Purchases products={products} purchaseOrders={purchaseOrders} vendors={vendors} userProfile={userProfile} onUpsertPO={upsertPurchaseOrder} onReceivePO={receivePurchaseOrder} onUpsertVendor={upsertVendor} />}
+            {currentView === 'PURCHASES' && <Purchases products={products} purchaseOrders={purchaseOrders} vendors={vendors} userProfile={userProfile} onUpsertPO={(po) => setPurchaseOrders(prev => [po, ...prev.filter(old => old.id !== po.id)])} onReceivePO={receivePurchaseOrder} onUpsertVendor={(v) => setVendors(prev => [...prev.filter(old => old.id !== v.id), v])} />}
             {currentView === 'FINANCE' && <Finance transactions={transactions} accounts={accounts} products={products} userProfile={userProfile} daySessions={daySessions} onOpenDay={handleOpenDay} onCloseDay={handleCloseDay} onAddExpense={(tx) => addTransaction({ ...tx, type: 'EXPENSE' })} recurringExpenses={recurringExpenses} onAddRecurring={(schedule) => setRecurringExpenses(prev => [...prev, schedule])} onDeleteRecurring={(id) => setRecurringExpenses(prev => prev.filter(s => s.id !== id))} />}
-            {currentView === 'CUSTOMERS' && <Customers customers={customers} transactions={transactions} onUpsertCustomer={upsertCustomer} onReceivePayment={(tx) => addTransaction({ ...tx, type: 'CREDIT_PAYMENT' })} />}
+            {currentView === 'CUSTOMERS' && <Customers customers={customers} transactions={transactions} onUpsertCustomer={(c) => setCustomers(prev => [...prev.filter(old => old.id !== c.id), c])} onReceivePayment={(tx) => addTransaction({ ...tx, type: 'CREDIT_PAYMENT' })} />}
             {currentView === 'CHEQUE_PRINT' && <ChequePrint />}
-            {currentView === 'SETTINGS' && <Settings userProfile={userProfile} setUserProfile={setUserProfile} onExport={handleExportData} onImport={handleImportData} syncStatus={syncStatus} />}
+            {currentView === 'SETTINGS' && <Settings userProfile={userProfile} setUserProfile={setUserProfile} onExport={() => {}} onImport={() => {}} syncStatus={syncStatus} />}
         </div>
       </main>
     </div>
