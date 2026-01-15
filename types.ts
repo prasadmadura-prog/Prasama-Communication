@@ -6,8 +6,14 @@ export interface Product {
   price: number;
   cost: number;
   stock: number;
-  category: string;
+  categoryId: string;
+  vendorId?: string;
   lowStockThreshold: number;
+}
+
+export interface Category {
+  id: string;
+  name: string;
 }
 
 export interface Vendor {
@@ -53,16 +59,41 @@ export interface Transaction {
   date: string;
   type: 'SALE' | 'PURCHASE' | 'EXPENSE' | 'CREDIT_PAYMENT';
   amount: number;
+  discount?: number;
   items?: { productId: string; quantity: number; price: number }[];
   description: string;
   paymentMethod: 'CASH' | 'BANK' | 'CARD' | 'CREDIT';
   customerId?: string;
 }
 
+export interface DaySession {
+  date: string;
+  openingBalance: number;
+  expectedClosing: number;
+  actualClosing?: number;
+  status: 'OPEN' | 'CLOSED';
+}
+
+export interface RecurringExpense {
+  id: string;
+  description: string;
+  amount: number;
+  paymentMethod: 'CASH' | 'BANK';
+  frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+  startDate: string;
+  lastProcessedDate?: string;
+}
+
 export interface BankAccount {
   id: string;
   name: string;
   balance: number;
+}
+
+export interface UserProfile {
+  name: string;
+  branch: string;
+  logo?: string;
 }
 
 export type View = 'DASHBOARD' | 'POS' | 'SALES_HISTORY' | 'INVENTORY' | 'PURCHASES' | 'FINANCE' | 'CUSTOMERS' | 'CHEQUE_PRINT' | 'BARCODE_PRINT' | 'SETTINGS';
