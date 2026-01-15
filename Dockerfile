@@ -1,22 +1,22 @@
-# 1. Specify a base image (e.g., for Node.js or Python)
-# This is the starting point for your application.
-FROM python:3.9-slim
+# Use the official Node.js 18 image as the base
+FROM node:18-alpine
 
-# 2. Set the working directory inside the container
+# Set the working directory inside the container
 WORKDIR /app
 
-# 3. Copy your application's dependency files
-COPY requirements.txt .
+# Copy package files first to leverage Docker cache
+COPY package*.json ./
 
-# 4. Install the dependencies
-RUN pip install -r requirements.txt
+# Install dependencies
+RUN npm install --production
 
-# 5. Copy the rest of your application code into the container
+# Copy the rest of your application code
 COPY . .
 
-# 6. Expose the port your app runs on (Cloud Run uses 8080 by default)
-ENV PORT 8080
-EXPOSE $PORT
+# Expose the port your app runs on (usually 8080 for Cloud Run)
+EXPOSE 8080
 
-# 7. Define the command to start your application
-CMD ["python", "your_main_app_file.py"]
+# The command to start your application
+# Ensure your package.json has a "start" script, or change this to: CMD ["node", "index.js"]
+CMD ["npm", "start"]
+
