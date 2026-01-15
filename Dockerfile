@@ -31,5 +31,3 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 ENV PORT 8080
 EXPOSE 8080
 CMD ["sh", "-c", "sed -i 's/8080/'$PORT'/g' /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
-
->>>>>>> 12c3047c2a9a883d177ffcc902ff904aaee8dff4
