@@ -1,19 +1,11 @@
-# Node modules (if any)
-node_modules
-npm-debug.log
-
-# Local environment variables
-.env
-.env.local
-
-# Git
 .git
 .gitignore
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Docker
+node_modules
 Dockerfile
 .dockerignore
+.DS_Store
+Thumbs.db
+README.md
+*.log
+.env
+.local
