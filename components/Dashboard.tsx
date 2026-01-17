@@ -1,287 +1,234 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Transaction, Product, BankAccount } from '../types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { Transaction, Product, BankAccount, Category, Vendor } from '../types';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getBusinessSummary } from '../services/geminiService';
 
 interface DashboardProps {
   transactions: Transaction[];
   products: Product[];
   accounts: BankAccount[];
+  vendors: Vendor[];
+  categories?: Category[];
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ transactions, products, accounts }) => {
-  const [aiInsight, setAiInsight] = useState<string>('Analyzing real-time metrics...');
+const Dashboard: React.FC<DashboardProps> = ({ transactions, products, accounts, vendors, categories = [] }) => {
+  const [aiInsight, setAiInsight] = useState<string>('Crunching real-time ledger data...');
 
   const stats = useMemo(() => ({
-    revenue: transactions.filter(t => t.type === 'SALE').reduce((acc, t) => acc + t.amount, 0),
-    expenses: transactions.filter(t => t.type === 'EXPENSE').reduce((acc, t) => acc + t.amount, 0),
-    stockValue: products.reduce((acc, p) => acc + (p.cost * p.stock), 0),
-    netBalance: accounts.reduce((acc, a) => acc + a.balance, 0),
+    revenue: transactions.filter(t => t.type === 'SALE').reduce((acc, t) => acc + Number(t.amount), 0),
+    expenses: transactions.filter(t => t.type === 'EXPENSE').reduce((acc, t) => acc + Number(t.amount), 0),
+    stockValue: products.reduce((acc, p) => acc + (Number(p.cost) * Number(p.stock)), 0),
+    netBalance: accounts.reduce((acc, a) => acc + Number(a.balance), 0),
   }), [transactions, products, accounts]);
 
-  const lowStockProducts = useMemo(() => {
-    return products.filter(p => p.stock <= p.lowStockThreshold);
+  // Cheque Notification Logic - Reminders 1 day before chequeDate
+  const chequeAlerts = useMemo(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+    return transactions.filter(t => 
+      t.paymentMethod === 'CHEQUE' && 
+      t.chequeDate === tomorrowStr
+    );
+  }, [transactions]);
+
+  // Critical Inventory Logic
+  const lowStockAlerts = useMemo(() => {
+    return products.filter(p => p.stock <= p.lowStockThreshold).sort((a, b) => a.stock - b.stock);
   }, [products]);
 
   useEffect(() => {
     const fetchInsight = async () => {
       if (transactions.length > 0) {
-        const text = await getBusinessSummary({ stats, recentTxs: transactions.slice(0, 5), lowStock: lowStockProducts.length });
+        const text = await getBusinessSummary({ stats, recentTxs: transactions.slice(0, 5) });
         setAiInsight(text || '');
       } else {
-        setAiInsight("Welcome back! Process transactions to activate your AI business coach.");
+        setAiInsight("Welcome. Process your first transaction to unlock AI-driven business intelligence.");
       }
     };
     fetchInsight();
-  }, [transactions, lowStockProducts.length, stats]);
+  }, [transactions.length, stats]);
 
   const chartData = useMemo(() => {
     return transactions
       .filter(t => t.type === 'SALE')
-      .slice(0, 15)
+      .slice(0, 10)
       .reverse()
       .map(t => ({ 
-        date: new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), 
-        amount: t.amount 
+        date: new Date(t.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short' }), 
+        amount: Number(t.amount) 
       }));
   }, [transactions]);
 
+  const getPayeeName = (tx: Transaction) => {
+    if (tx.vendorId) return vendors.find(v => v.id === tx.vendorId)?.name || 'Unknown Supplier';
+    return tx.description || 'General Payee';
+  };
+
   return (
-    <div className="space-y-8 pb-10">
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+    <div className="space-y-10">
+      <header className="flex justify-between items-end">
         <div>
-          <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Executive Dashboard</h2>
-          <p className="text-slate-500 font-medium mt-1">Strategic overview of your business operations</p>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Executive Summary</h2>
+          <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-0.5">Performance metrics for the current cycle</p>
         </div>
-        <div className="bg-white px-6 py-3 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="text-right">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Main Cash Register</p>
-            <p className="text-xl font-extrabold text-indigo-600 leading-none mt-1">
-              Rs. {accounts.find(a => a.id === 'cash')?.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </p>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl shadow-inner">💵</div>
+        <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl border border-slate-200 shadow-sm">
+          <div className={`w-2 h-2 rounded-full animate-pulse ${lowStockAlerts.length > 0 ? 'bg-rose-500' : 'bg-emerald-500'}`}></div>
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+            {lowStockAlerts.length > 0 ? `${lowStockAlerts.length} Stock Alerts` : 'Inventory Healthy'}
+          </span>
         </div>
       </header>
 
-      {/* Stats Grid */}
+      {/* Critical Stock Alerts - HIGH PRIORITY */}
+      {lowStockAlerts.length > 0 && (
+        <div className="animate-in slide-in-from-top-4 duration-500">
+          <div className="bg-rose-600 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-rose-200 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-10 opacity-10 pointer-events-none">
+              <span className="text-8xl">📦</span>
+            </div>
+            <div className="relative z-10 space-y-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-rose-200">Inventory Depletion Alert</p>
+                  <h3 className="text-2xl font-black uppercase tracking-tighter">Critical Stock Shortfall</h3>
+                </div>
+                <div className="bg-white/10 px-4 py-2 rounded-xl backdrop-blur-md border border-white/20">
+                  <span className="text-xs font-black uppercase tracking-widest">{lowStockAlerts.length} Items Below Threshold</span>
+                </div>
+              </div>
+              
+              <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+                {lowStockAlerts.map(p => (
+                  <div key={p.id} className="min-w-[280px] bg-white/10 backdrop-blur-md px-6 py-5 rounded-2xl border border-white/20 flex flex-col justify-between group hover:bg-white/20 transition-all">
+                    <div>
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-rose-200 font-mono">{p.sku}</span>
+                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-widest ${p.stock === 0 ? 'bg-rose-950 text-rose-300' : 'bg-amber-500/30 text-amber-200'}`}>
+                          {p.stock === 0 ? 'Out of Stock' : 'Low Stock'}
+                        </span>
+                      </div>
+                      <p className="font-bold text-sm uppercase truncate mb-3">{p.name}</p>
+                    </div>
+                    <div className="flex justify-between items-end border-t border-white/10 pt-3">
+                      <div className="space-y-0.5">
+                        <p className="text-[9px] font-black uppercase text-rose-200 opacity-60 tracking-widest">Available</p>
+                        <p className="text-xl font-black font-mono">{p.stock}</p>
+                      </div>
+                      <div className="text-right space-y-0.5">
+                        <p className="text-[9px] font-black uppercase text-rose-200 opacity-60 tracking-widest">Threshold</p>
+                        <p className="text-sm font-bold opacity-80">{p.lowStockThreshold}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cheque Notifications - HIGH PRIORITY */}
+      {chequeAlerts.length > 0 && (
+        <div className="animate-in slide-in-from-top-4 duration-500">
+          <div className="bg-indigo-600 rounded-[2rem] p-8 text-white shadow-2xl shadow-indigo-200 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-10 opacity-10">
+              <span className="text-8xl">✍️</span>
+            </div>
+            <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
+              <div className="space-y-2">
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-200">Financial Maturity Alert</p>
+                <h3 className="text-2xl font-black uppercase tracking-tighter">Settlements Due Tomorrow</h3>
+                <p className="text-indigo-100 text-sm font-medium opacity-80">System has identified {chequeAlerts.length} cheques requiring clearance verification in 24 hours.</p>
+              </div>
+              <div className="flex flex-col gap-3 w-full md:w-auto">
+                {chequeAlerts.map(tx => (
+                  <div key={tx.id} className="bg-white/10 backdrop-blur-md px-6 py-4 rounded-2xl border border-white/20 flex justify-between items-center gap-8">
+                    <div className="min-w-[150px]">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-indigo-200">CHQ: {tx.chequeNumber}</p>
+                      <p className="font-bold text-sm uppercase truncate">{getPayeeName(tx)}</p>
+                    </div>
+                    <p className="font-black font-mono text-lg whitespace-nowrap">Rs. {Number(tx.amount).toLocaleString()}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
-          { label: 'Total Revenue', value: stats.revenue, color: 'text-indigo-600', icon: '💰', trend: '+12.5%' },
-          { label: 'Operating Expenses', value: stats.expenses, color: 'text-rose-600', icon: '💸', trend: '-2.1%' },
-          { label: 'Inventory Assets', value: stats.stockValue, color: 'text-amber-600', icon: '📦', trend: 'Stock ok' },
-          { label: 'Liquid Capital', value: stats.netBalance, color: 'text-emerald-600', icon: '🏦', trend: '+Rs. 2.4k' },
+          { label: 'Total Sales', value: stats.revenue, trend: '+14%', color: 'text-indigo-600', bg: 'bg-indigo-50/50', icon: '󰄿' },
+          { label: 'Expenditure', value: stats.expenses, trend: '-2%', color: 'text-rose-600', bg: 'bg-rose-50/50', icon: '󰈀' },
+          { label: 'Asset Value', value: stats.stockValue, trend: 'Stable', color: 'text-amber-600', bg: 'bg-amber-50/50', icon: '󰏖' },
+          { label: 'Available Liquidity', value: stats.netBalance, trend: 'Net', color: 'text-emerald-600', bg: 'bg-emerald-50/50', icon: '󰟵' },
         ].map((item, idx) => (
-          <div key={idx} className="group bg-white p-6 rounded-3xl border border-slate-200 shadow-sm card-hover relative overflow-hidden">
-            <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-2xl shadow-inner group-hover:scale-110 transition-transform">
-                {item.icon}
+          <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 hover:shadow-xl hover:border-indigo-100 transition-all group">
+            <div className="flex justify-between items-center mb-5">
+              <div className={`w-12 h-12 ${item.bg} rounded-xl flex items-center justify-center text-xl`}>
+                <span className={item.color}>•</span>
               </div>
-              <span className={`text-[10px] font-black px-2 py-1 rounded-lg uppercase tracking-wider ${
-                item.color.replace('text', 'bg').replace('600', '100')
-              } ${item.color}`}>
+              <span className={`text-[10px] font-bold px-2 py-1 rounded-md uppercase tracking-wider ${item.color} ${item.bg}`}>
                 {item.trend}
               </span>
             </div>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">{item.label}</p>
-            <p className={`text-2xl font-black ${item.color} tracking-tight`}>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">{item.label}</p>
+            <p className={`text-2xl font-bold text-slate-900 tracking-tight`}>
               Rs. {item.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </p>
-            <div className="absolute -bottom-2 -right-2 opacity-[0.03] scale-[2] pointer-events-none group-hover:opacity-[0.06] transition-opacity">
-              {item.icon}
-            </div>
           </div>
         ))}
       </div>
 
-      {/* Alerts & Insights */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          {/* Main Chart Area */}
-          <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden">
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <span>📈</span> Revenue Trajectory
-                </h3>
-                <p className="text-xs text-slate-400 font-medium mt-1">Tracking last 15 successful transactions</p>
-              </div>
-              <div className="flex gap-2">
-                <button className="px-3 py-1 text-[10px] font-bold bg-indigo-50 text-indigo-600 rounded-lg">Daily</button>
-                <button className="px-3 py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 rounded-lg">Weekly</button>
-              </div>
-            </div>
-            <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.15}/>
-                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f1f5f9" />
-                  <XAxis 
-                    dataKey="date" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 600}} 
-                    dy={10}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 600}} 
-                    tickFormatter={(val) => `Rs.${val/1000}k`}
-                  />
-                  <Tooltip 
-                    contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', padding: '12px'}}
-                    itemStyle={{fontSize: '14px', fontWeight: 'bold', color: '#4f46e5'}}
-                    labelStyle={{fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94a3b8', marginBottom: '4px'}}
-                    formatter={(val: number) => [`Rs. ${val.toLocaleString()}`, 'Revenue']}
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="amount" 
-                    stroke="#4f46e5" 
-                    strokeWidth={4} 
-                    fillOpacity={1} 
-                    fill="url(#colorAmount)" 
-                    animationDuration={1500}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm relative">
+          <div className="flex justify-between items-center mb-10">
+            <h3 className="font-black text-slate-900 uppercase tracking-tighter">Revenue Velocity</h3>
+            <select className="text-[10px] font-black uppercase text-slate-400 bg-slate-50 px-3 py-1.5 rounded-lg border-none outline-none">
+              <option>Last 7 Days</option>
+              <option>This Month</option>
+            </select>
           </div>
-
-          {/* Low Stock Alert */}
-          {lowStockProducts.length > 0 && (
-            <div className="bg-rose-50 border border-rose-100 p-6 rounded-3xl flex items-center gap-6 animate-in slide-in-from-left-4">
-              <div className="w-14 h-14 rounded-2xl bg-white flex items-center justify-center text-3xl shadow-sm border border-rose-200/50">⚠️</div>
-              <div className="flex-1">
-                <h4 className="font-bold text-rose-900 text-lg">Critical Inventory Alert</h4>
-                <p className="text-sm text-rose-700 mt-1">
-                  Action required: <span className="font-extrabold">{lowStockProducts.length}</span> units have fallen below safety thresholds.
-                </p>
-              </div>
-              <button className="bg-rose-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-rose-200">Refill Stock</button>
-            </div>
-          )}
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="chartGrad" x1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 600}} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#94a3b8', fontWeight: 600}} tickFormatter={(v) => `${v/1000}k`} />
+                <Tooltip 
+                  contentStyle={{borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
+                  formatter={(v: number) => [`Rs. ${v.toLocaleString()}`, 'Sales']}
+                />
+                <Area type="monotone" dataKey="amount" stroke="#6366f1" strokeWidth={3} fill="url(#chartGrad)" animationDuration={1000}/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
-        {/* Sidebar Insights */}
-        <div className="space-y-6">
-          <div className="bg-slate-950 p-8 rounded-[2rem] shadow-2xl text-white relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/20 rounded-full blur-3xl -translate-y-16 translate-x-16"></div>
+        <div className="space-y-8">
+          <div className="bg-slate-900 p-8 rounded-3xl shadow-xl text-white relative overflow-hidden ring-1 ring-white/10 h-full flex flex-col justify-center">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 blur-3xl -mr-16 -mt-16"></div>
             <div className="relative z-10">
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/50 group-hover:rotate-12 transition-transform">
-                  <span className="text-xl">✨</span>
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-white tracking-tight">AI Insights</h3>
-                  <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest leading-none">Powered by Gemini Pro</p>
-                </div>
+                <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-xs">✨</div>
+                <h3 className="font-bold text-sm tracking-tight uppercase">AI Business Advisory</h3>
               </div>
-              <div className="space-y-4">
-                <p className="text-slate-300 leading-relaxed text-sm italic">
-                  "{aiInsight}"
-                </p>
-                <div className="pt-4 border-t border-slate-800">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Suggested actions</p>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="bg-slate-900 px-3 py-1.5 rounded-lg text-[10px] font-bold text-indigo-400 border border-slate-800">Optimize Inventory</span>
-                    <span className="bg-slate-900 px-3 py-1.5 rounded-lg text-[10px] font-bold text-emerald-400 border border-slate-800">Check Margins</span>
-                  </div>
-                </div>
+              <p className="text-slate-300 text-sm leading-relaxed italic font-medium">"{aiInsight}"</p>
+              <div className="mt-8 pt-6 border-t border-white/5 flex justify-between items-center">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Gemini Intelligent Engine</span>
+                <button className="text-[10px] font-black text-indigo-400 uppercase tracking-widest hover:text-indigo-300 transition-colors">Re-analyze Data</button>
               </div>
             </div>
           </div>
-
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-            <h3 className="font-bold text-slate-800 mb-6 flex items-center justify-between">
-              <span>Quick Assets</span>
-              <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-1 rounded-lg">Live</span>
-            </h3>
-            <div className="space-y-4">
-              {accounts.map(acc => (
-                <div key={acc.id} className="flex items-center justify-between p-3 rounded-2xl hover:bg-slate-50 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-sm shadow-inner">
-                      {acc.id === 'cash' ? '💵' : '🏦'}
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-800">{acc.name}</p>
-                      <p className="text-[10px] text-slate-400 font-medium">Available Fund</p>
-                    </div>
-                  </div>
-                  <p className="text-sm font-black text-slate-900">Rs. {acc.balance.toLocaleString()}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Modern Transaction Table */}
-      <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-8 border-b border-slate-100 flex justify-between items-center">
-          <div>
-            <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Recent Activity Log</h3>
-            <p className="text-xs text-slate-400 font-medium mt-1">Detailed ledger of your latest operations</p>
-          </div>
-          <button className="text-xs font-bold text-indigo-600 hover:bg-indigo-50 px-4 py-2 rounded-xl transition-colors">Export CSV</button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm border-separate border-spacing-0">
-            <thead className="bg-slate-50/50 text-slate-400">
-              <tr>
-                <th className="px-8 py-4 font-bold uppercase tracking-widest text-[10px]">Timestamp</th>
-                <th className="px-8 py-4 font-bold uppercase tracking-widest text-[10px]">Classification</th>
-                <th className="px-8 py-4 font-bold uppercase tracking-widest text-[10px]">Operational Details</th>
-                <th className="px-8 py-4 font-bold uppercase tracking-widest text-[10px]">Method</th>
-                <th className="px-8 py-4 font-bold uppercase tracking-widest text-[10px] text-right">Value</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {transactions.slice(0, 10).map((tx) => (
-                <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors group">
-                  <td className="px-8 py-5 text-slate-500 font-medium">
-                    {new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </td>
-                  <td className="px-8 py-5">
-                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
-                      tx.type === 'SALE' ? 'bg-emerald-100 text-emerald-700' : 
-                      tx.type === 'PURCHASE' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'
-                    }`}>
-                      {tx.type}
-                    </span>
-                  </td>
-                  <td className="px-8 py-5 font-bold text-slate-800">{tx.description}</td>
-                  <td className="px-8 py-5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>
-                      <span className="text-slate-500 font-bold text-xs uppercase tracking-tight">{tx.paymentMethod}</span>
-                    </div>
-                  </td>
-                  <td className={`px-8 py-5 text-right font-black text-base ${tx.type === 'SALE' ? 'text-emerald-600' : 'text-slate-900'}`}>
-                    {tx.type === 'SALE' ? '+' : '-'}Rs. {tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </td>
-                </tr>
-              ))}
-              {transactions.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-8 py-20 text-center text-slate-400 italic">
-                    <div className="flex flex-col items-center">
-                      <span className="text-4xl mb-3 opacity-20">📁</span>
-                      No operational records found for this period.
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
         </div>
       </div>
     </div>

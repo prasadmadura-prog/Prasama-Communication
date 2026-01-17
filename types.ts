@@ -23,6 +23,7 @@ export interface Vendor {
   email: string;
   phone: string;
   address: string;
+  totalBalance: number; // Outstanding amount owed to this supplier
 }
 
 export interface Customer {
@@ -51,19 +52,27 @@ export interface PurchaseOrder {
   items: PurchaseOrderItem[];
   status: POStatus;
   totalAmount: number;
-  paymentMethod: 'CASH' | 'BANK' | 'CARD' | 'CREDIT';
+  paymentMethod: 'CASH' | 'BANK' | 'CARD' | 'CREDIT' | 'CHEQUE';
+  accountId?: string; // Target bank/cash account ID
+  chequeNumber?: string;
+  chequeDate?: string;
 }
 
 export interface Transaction {
   id: string;
   date: string;
-  type: 'SALE' | 'PURCHASE' | 'EXPENSE' | 'CREDIT_PAYMENT';
+  type: 'SALE' | 'PURCHASE' | 'EXPENSE' | 'CREDIT_PAYMENT' | 'TRANSFER';
   amount: number;
   discount?: number;
   items?: { productId: string; quantity: number; price: number }[];
   description: string;
-  paymentMethod: 'CASH' | 'BANK' | 'CARD' | 'CREDIT';
+  paymentMethod: 'CASH' | 'BANK' | 'CARD' | 'CREDIT' | 'CHEQUE';
+  accountId?: string; // Target (or source for transfers) account ID
+  destinationAccountId?: string; // Target account for transfers
   customerId?: string;
+  vendorId?: string;
+  chequeNumber?: string;
+  chequeDate?: string;
 }
 
 export interface DaySession {
@@ -79,6 +88,7 @@ export interface RecurringExpense {
   description: string;
   amount: number;
   paymentMethod: 'CASH' | 'BANK';
+  accountId?: string;
   frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY';
   startDate: string;
   lastProcessedDate?: string;
@@ -88,6 +98,7 @@ export interface BankAccount {
   id: string;
   name: string;
   balance: number;
+  accountNumber?: string;
 }
 
 export interface UserProfile {

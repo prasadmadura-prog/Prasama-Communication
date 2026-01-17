@@ -1,26 +1,27 @@
 
 import React from 'react';
-import { View, UserProfile } from '../types';
+import { View, UserProfile, BankAccount } from '../types';
 
 interface SidebarProps {
   currentView: View;
   setView: (v: View) => void;
   userProfile: UserProfile;
+  accounts: BankAccount[];
   onEditProfile: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, userProfile, onEditProfile }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, userProfile, accounts, onEditProfile }) => {
   const menuItems = [
-    { id: 'DASHBOARD', icon: 'grid-outline', label: 'Dashboard', emoji: '📊' },
-    { id: 'POS', icon: 'cart-outline', label: 'POS Terminal', emoji: '🛒' },
-    { id: 'SALES_HISTORY', icon: 'time-outline', label: 'Sales History', emoji: '📜' },
-    { id: 'INVENTORY', icon: 'cube-outline', label: 'Inventory', emoji: '📦' },
-    { id: 'BARCODE_PRINT', icon: 'barcode-outline', label: 'Barcode Print', emoji: '🏷️' },
-    { id: 'PURCHASES', icon: 'document-text-outline', label: 'Purchases', emoji: '📑' },
-    { id: 'CUSTOMERS', icon: 'people-outline', label: 'Customers', emoji: '👥' },
-    { id: 'FINANCE', icon: 'wallet-outline', label: 'Finance', emoji: '💰' },
-    { id: 'CHEQUE_PRINT', icon: 'card-outline', label: 'Cheques', emoji: '🏦' },
-    { id: 'SETTINGS', icon: 'settings-outline', label: 'Settings & Backup', emoji: '⚙️' },
+    { id: 'DASHBOARD', label: 'Dashboard', icon: '📊' },
+    { id: 'POS', label: 'POS', icon: '🛒' },
+    { id: 'SALES_HISTORY', label: 'Sales History', icon: '📜' },
+    { id: 'INVENTORY', label: 'Inventory', icon: '📦' },
+    { id: 'BARCODE_PRINT', label: 'Barcode Print', icon: '🏷️' },
+    { id: 'PURCHASES', label: 'Purchases', icon: '📥' },
+    { id: 'CUSTOMERS', label: 'Customers', icon: '👥' },
+    { id: 'FINANCE', label: 'Finance', icon: '💰' },
+    { id: 'CHEQUE_PRINT', label: 'Cheque Print', icon: '✍️' },
+    { id: 'SETTINGS', label: 'Settings', icon: '⚙️' },
   ];
 
   const initials = userProfile.name
@@ -31,62 +32,67 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, userProfile, on
     .slice(0, 2);
 
   return (
-    <div className="w-72 h-full bg-slate-950 text-slate-300 flex flex-col border-r border-slate-800 shadow-2xl z-20">
-      <div className="p-8 pb-10">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-            <span className="font-black text-xl italic tracking-tighter">P</span>
+    <div className="w-[280px] h-full bg-[#0f172a] text-slate-300 flex flex-col border-r border-slate-800/50 shadow-2xl z-20">
+      <div className="px-8 pt-10 pb-6">
+        <div className="flex items-center gap-3 mb-8">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]">
+            <span className="font-black text-xl italic">P</span>
           </div>
-          <div>
-            <h1 className="text-lg font-extrabold tracking-tight text-white leading-none">PRASAMA(PVT)LTD</h1>
-            <p className="text-[10px] text-indigo-400 mt-1 uppercase font-bold tracking-[0.2em]">Strategic ERP Solutions</p>
+          <div className="overflow-hidden">
+            <h1 className="text-sm font-black tracking-tight text-white leading-tight truncate uppercase">{userProfile.name}</h1>
+            <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-[0.1em]">Strategic Suite</p>
           </div>
+        </div>
+
+        {/* Account Summaries - Persistent Top-Left View */}
+        <div className="space-y-3 bg-slate-900/40 p-5 rounded-2xl border border-slate-800/50">
+          <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Live Liquidity</p>
+          {accounts.map(acc => (
+            <div key={acc.id} className="flex flex-col">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter flex items-center gap-1.5">
+                {acc.id === 'cash' ? '💵' : '🏦'} {acc.name}
+              </span>
+              <span className="text-[13px] font-black font-mono text-white">
+                Rs. {Number(acc.balance).toLocaleString()}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 
-      <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar">
+      <nav className="flex-1 px-4 space-y-1 overflow-y-auto custom-scrollbar pt-2">
         {menuItems.map((item) => {
           const isActive = currentView === item.id;
           return (
             <button
               key={item.id}
               onClick={() => setView(item.id as View)}
-              className={`w-full group flex items-center px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-200 ${
+              className={`w-full group flex items-center px-4 py-3 text-[13px] font-bold rounded-2xl transition-all duration-200 ${
                 isActive 
-                  ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20' 
-                  : 'text-slate-400 hover:bg-slate-900 hover:text-white'
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' 
+                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
               }`}
             >
-              <span className={`mr-4 text-lg transition-transform duration-200 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`}>
-                {item.emoji}
+              <span className={`mr-3 text-lg transition-transform group-hover:scale-110 ${isActive ? 'opacity-100' : 'opacity-50'}`}>
+                {item.icon}
               </span>
               {item.label}
-              {isActive && (
-                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-200 animate-pulse"></div>
-              )}
             </button>
           );
         })}
       </nav>
 
-      <div className="p-6 mt-4 border-t border-slate-900 bg-slate-950/50">
+      <div className="p-4 mt-auto border-t border-slate-800/30">
         <button 
           onClick={onEditProfile}
-          className="w-full group flex items-center gap-4 bg-slate-900/50 p-3 rounded-2xl border border-slate-800/50 hover:bg-slate-900 hover:border-indigo-500/50 transition-all text-left outline-none focus:ring-2 focus:ring-indigo-500/20"
+          className="w-full flex items-center gap-3 bg-slate-900/30 p-4 rounded-2xl border border-slate-800/30 hover:bg-slate-800/60 transition-all text-left group"
         >
-          <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 group-hover:border-indigo-500/50 flex items-center justify-center text-sm font-black text-indigo-400 shadow-inner transition-colors">
-            {initials || 'AD'}
+          <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-black text-indigo-400">
+            {initials}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-white truncate group-hover:text-indigo-400 transition-colors">
-              {userProfile.name}
-            </p>
-            <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider truncate">
-              {userProfile.branch}
-            </p>
-          </div>
-          <div className="text-slate-600 group-hover:text-indigo-400 transition-colors text-xs">
-            ⚙️
+            <p className="text-xs font-bold text-white truncate">{userProfile.name}</p>
+            <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tight truncate">{userProfile.branch}</p>
           </div>
         </button>
       </div>

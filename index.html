@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PRASAMA(PVT)LTD ERP | Cloud Edition</title>
+    <title>PRASAMA ERP | Enterprise Intelligence</title>
     
     <!-- External Dependencies -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -12,41 +12,63 @@
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <style>
         :root {
-            --primary: #4f46e5;
-            --background: #f8fafc;
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --bg-canvas: #f9fafb;
+            --sidebar-width: 280px;
         }
 
-        /* Prevent Blogger theme conflicts */
         #root {
             all: initial;
             display: block;
-            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-family: 'Inter', 'Plus Jakarta Sans', sans-serif;
             height: 100vh;
             width: 100%;
+            background-color: var(--bg-canvas);
         }
 
         body { 
             margin: 0;
             padding: 0;
             overflow: hidden;
-            background-color: var(--background);
         }
 
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        /* Modern Scrollbar */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 20px; }
+        ::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
         
         @media print {
             .no-print { display: none !important; }
         }
 
-        .glass {
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(12px);
+        .glass-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .gradient-border {
+            position: relative;
+            background: linear-gradient(to bottom right, #6366f1, #a855f7);
+            padding: 1px;
+        }
+
+        /* Micro-interactions */
+        .btn-hover {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .btn-hover:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        .btn-hover:active {
+            transform: translateY(0);
         }
     </style>
 

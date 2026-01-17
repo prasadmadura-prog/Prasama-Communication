@@ -11,6 +11,7 @@ const ChequePrint: React.FC = () => {
     chequeNumber: '000126',
     isAccountPayee: true
   });
+  const [showGuides, setShowGuides] = useState(true);
 
   const numberToWords = (num: number): string => {
     if (isNaN(num) || num === 0) return "";
@@ -74,6 +75,12 @@ const ChequePrint: React.FC = () => {
         </div>
         <div className="flex gap-3">
             <button 
+              onClick={() => setShowGuides(!showGuides)}
+              className={`px-5 py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all border ${showGuides ? 'bg-slate-200 border-slate-300 text-slate-700' : 'bg-white border-slate-200 text-slate-400'}`}
+            >
+              {showGuides ? 'Hide Guides' : 'Show Guides'}
+            </button>
+            <button 
               onClick={() => setCheque({...cheque, isAccountPayee: !cheque.isAccountPayee})}
               className={`px-5 py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all border ${cheque.isAccountPayee ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'}`}
             >
@@ -97,10 +104,10 @@ const ChequePrint: React.FC = () => {
           
           <div className="space-y-5">
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Payee Name</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Beneficiary / Payee</label>
               <input 
                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 text-sm font-bold text-slate-900 transition-all uppercase"
-                placeholder="BENEFICIARY NAME LTD"
+                placeholder="NAME OF PAYEE"
                 value={cheque.payee}
                 onChange={e => setCheque({...cheque, payee: e.target.value.toUpperCase()})}
               />
@@ -108,7 +115,7 @@ const ChequePrint: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Numeric Amount</label>
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Amount (Rs.)</label>
                 <input 
                   type="number"
                   step="0.01"
@@ -141,44 +148,68 @@ const ChequePrint: React.FC = () => {
           </div>
         </div>
 
-        <div className="xl:col-span-8 flex justify-center py-10 bg-slate-200/40 rounded-[3rem] border-2 border-dashed border-slate-300">
+        <div className="xl:col-span-8 flex flex-col items-center py-10 bg-slate-200/40 rounded-[3rem] border-2 border-dashed border-slate-300">
           <div className="relative w-[800px] h-[340px] bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200 font-mono">
-            <div className="absolute inset-0 opacity-[0.03] pointer-events-none p-10 flex flex-col justify-between">
+            {/* Background Bank Cheque UI Overlay */}
+            <div className="absolute inset-0 opacity-[0.06] pointer-events-none p-8 flex flex-col justify-between select-none">
               <div className="flex justify-between items-start">
-                 <div className="text-4xl font-black italic">PRASAMA BANKING</div>
-                 <div className="flex gap-4"><span>DD</span><span>MM</span><span>YYYY</span></div>
+                 <div className="text-4xl font-black italic">PRASAMA GLOBAL BANK</div>
+                 <div className="flex gap-6 pt-2">
+                    {Array(8).fill(0).map((_, i) => (
+                      <div key={i} className="w-8 h-10 border border-slate-900/40 flex items-center justify-center text-[10px] font-black uppercase text-slate-900/40">
+                        {i < 2 ? 'D' : i < 4 ? 'M' : 'Y'}
+                      </div>
+                    ))}
+                 </div>
               </div>
-              <div className="h-0.5 bg-black w-3/4"></div>
-              <div className="h-0.5 bg-black w-3/4"></div>
-              <div className="flex justify-end"><div className="w-48 h-12 border-2 border-black"></div></div>
+              <div className="space-y-12 pl-12">
+                 <div className="flex items-end gap-4"><span className="text-sm font-black italic">Pay</span> <div className="h-0.5 bg-slate-900 flex-1"></div></div>
+                 <div className="flex items-end gap-4"><span className="text-sm font-black italic">Rupees</span> <div className="h-0.5 bg-slate-900 flex-1"></div></div>
+              </div>
+              <div className="flex justify-end pr-8 pb-4">
+                 <div className="w-64 h-16 border-2 border-slate-900/20 rounded flex items-center px-4"><span className="text-sm font-black italic opacity-50">Amount (Rs.)</span></div>
+              </div>
             </div>
 
-            <div className="cheque-data-preview select-none">
+            {/* Alignment Guides */}
+            {showGuides && (
+              <div className="absolute inset-0 pointer-events-none z-10 opacity-20">
+                <div className="absolute top-[108px] left-0 w-full border-t border-indigo-400 border-dashed"></div>
+                <div className="absolute top-[162px] left-0 w-full border-t border-indigo-400 border-dashed"></div>
+                <div className="absolute top-0 left-[140px] h-full border-l border-indigo-400 border-dashed"></div>
+                <div className="absolute top-0 right-14 h-full border-l border-indigo-400 border-dashed"></div>
+              </div>
+            )}
+
+            <div className="cheque-data-preview select-none relative z-20">
               {cheque.isAccountPayee && (
-                <div className="absolute top-10 left-12 border-y-[1.5px] border-black p-0.5 rotate-[-15deg] z-20">
-                  <p className="text-[10px] font-black uppercase tracking-[0.15em] text-black px-4 py-1">A/C PAYEE ONLY</p>
+                <div className="absolute top-8 left-12 border-y-[2.5px] border-slate-950 p-0.5 rotate-[-12deg]">
+                  <p className="text-[14px] font-black uppercase tracking-[0.2em] text-slate-950 px-4 py-1.5">A/C PAYEE ONLY</p>
                 </div>
               )}
 
-              <div className="absolute top-10 right-14 flex gap-8 text-2xl font-black text-slate-950">
+              <div className="absolute top-10 right-14 flex gap-6 text-2xl font-black text-slate-950">
                  {dateChars.map((char, i) => (
-                   <span key={i} className={i === 2 || i === 4 ? 'ml-2' : ''}>{char}</span>
+                   <span key={i} className={`w-8 text-center ${i === 2 || i === 4 ? 'ml-1.5' : ''}`}>{char}</span>
                  ))}
               </div>
 
-              <div className="absolute top-[105px] left-[160px] text-xl font-black tracking-tight text-slate-900">
-                 {cheque.payee ? `**${cheque.payee}**` : ''}
+              <div className="absolute top-[108px] left-[140px] text-2xl font-black tracking-tight text-slate-950 uppercase">
+                 {cheque.payee ? `** ${cheque.payee} **` : ''}
               </div>
 
-              <div className="absolute top-[160px] left-[130px] text-lg font-bold leading-[2] max-w-[500px] text-slate-800">
-                 {cheque.amountInWords ? `**${cheque.amountInWords}**` : ''}
+              <div className="absolute top-[156px] left-[110px] text-[15px] font-black leading-[2.2] max-w-[550px] text-slate-950 italic">
+                 {cheque.amountInWords ? `** ${cheque.amountInWords} **` : ''}
               </div>
 
-              <div className="absolute top-[185px] right-14 text-2xl font-black border-[1.5px] border-indigo-100 p-2 min-w-[200px] text-right rounded-md text-indigo-700 bg-indigo-50/20">
-                 {cheque.amount ? `Rs. ${formattedAmount}` : ''}
+              <div className="absolute top-[186px] right-14 text-2xl font-black border-[3px] border-slate-950 p-3 min-w-[240px] text-right rounded-lg text-slate-950 bg-white/40 shadow-sm backdrop-blur-[2px]">
+                 {cheque.amount ? `${formattedAmount} /=` : ''}
               </div>
             </div>
           </div>
+          <p className="mt-8 text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+            <span>ℹ️</span> Ensure your printer tray is aligned to the left margin
+          </p>
         </div>
       </div>
 
@@ -189,20 +220,20 @@ const ChequePrint: React.FC = () => {
         
         <div className="date-line">
            {dateChars.map((char, i) => (
-             <span key={i} className={i === 1 || i === 3 ? 'date-gap' : ''}>{char}</span>
+             <span key={i} className={`date-char ${i === 2 || i === 4 ? 'date-gap' : ''}`}>{char}</span>
            ))}
         </div>
 
         <div className="payee-line">
-           {cheque.payee ? `**${cheque.payee}**` : ''}
+           {cheque.payee ? `** ${cheque.payee} **` : ''}
         </div>
 
         <div className="words-line">
-           {cheque.amountInWords ? `**${cheque.amountInWords}**` : ''}
+           {cheque.amountInWords ? `** ${cheque.amountInWords} **` : ''}
         </div>
 
         <div className="numeric-line">
-           {cheque.amount ? `**${formattedAmount}**` : ''}
+           {cheque.amount ? `${formattedAmount} /=` : ''}
         </div>
       </div>
 
@@ -210,7 +241,7 @@ const ChequePrint: React.FC = () => {
         .cheque-print-layout { display: none; }
 
         @media print {
-          @page { size: A4 landscape; margin: 0; }
+          @page { size: landscape; margin: 0; }
           body { background: white !important; margin: 0 !important; padding: 0 !important; font-family: 'JetBrains Mono', monospace !important; }
           #root > *:not(.cheque-print-layout),
           main > *:not(.cheque-print-layout),
@@ -220,63 +251,76 @@ const ChequePrint: React.FC = () => {
 
           .cheque-print-layout {
             display: block !important;
-            position: absolute;
-            top: 0;
-            left: 0;
+            position: relative;
             width: 210mm;
-            height: 90mm;
+            height: 95mm;
             background: transparent !important;
             color: black !important;
-            font-weight: 800 !important;
+            font-weight: 900 !important;
+            margin: 0;
+            padding: 0;
           }
 
           .crossing-line {
             position: absolute;
-            top: 15mm;
-            left: 20mm;
-            border-top: 1.5pt solid black;
-            border-bottom: 1.5pt solid black;
-            padding: 4px 25px;
-            transform: rotate(-15deg);
-            font-size: 11pt;
-            letter-spacing: 1.5pt;
+            top: 10mm;
+            left: 15mm;
+            border-top: 2.5pt solid black;
+            border-bottom: 2.5pt solid black;
+            padding: 4px 24px;
+            transform: rotate(-12deg);
+            font-size: 13pt;
+            font-weight: 900;
+            letter-spacing: 2.5pt;
             white-space: nowrap;
           }
 
           .date-line {
             position: absolute;
-            top: 10mm;
-            right: 18mm;
+            top: 12mm;
+            right: 15mm;
             font-size: 21pt;
-            letter-spacing: 13.5mm;
+            display: flex;
+            letter-spacing: 0.5pt;
           }
-          .date-gap { margin-right: 14mm; }
+          
+          .date-char {
+            width: 9.2mm;
+            text-align: center;
+          }
+
+          .date-gap { margin-left: 2.5mm; }
 
           .payee-line {
             position: absolute;
-            top: 32mm;
-            left: 48mm;
-            font-size: 16pt;
+            top: 32.5mm;
+            left: 45mm;
+            font-size: 17pt;
             text-transform: uppercase;
+            font-weight: 900;
+            letter-spacing: -0.5pt;
           }
 
           .words-line {
             position: absolute;
-            top: 50mm;
-            left: 35mm;
-            width: 130mm;
-            font-size: 13pt;
+            top: 48mm;
+            left: 32mm;
+            width: 145mm;
+            font-size: 13.5pt;
             line-height: 2.2;
+            font-style: italic;
+            font-weight: 900;
           }
 
           .numeric-line {
             position: absolute;
-            top: 54mm; 
-            right: 22mm;
+            top: 55mm; 
+            right: 15mm;
             font-size: 21pt;
             text-align: right;
             min-width: 55mm;
-            letter-spacing: 1pt;
+            letter-spacing: 0.5pt;
+            font-weight: 900;
           }
 
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }

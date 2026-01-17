@@ -1,25 +1,38 @@
-
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, Firestore } from "firebase/firestore";
 
-// Load Firebase config from environment variables or use defaults
+/**
+ * FIREBASE SETUP:
+ * Configured with user-provided credentials for 'prasamapos' project.
+ */
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "YOUR_API_KEY",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "your-project.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "your-project-id",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "your-project.appspot.com",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "your-sender-id",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "your-app-id"
+  apiKey: "AIzaSyCx8V3BFStTHfPNJm4Vw_U5KATEojCiufg",
+  authDomain: "prasamapos.firebaseapp.com",
+  projectId: "prasamapos",
+  storageBucket: "prasamapos.firebasestorage.app",
+  messagingSenderId: "673674172591",
+  appId: "1:673674172591:web:c97132b1219a4784981c5a"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+let db: Firestore | null = null;
 
-// Use a fixed document ID for the main store to simplify persistence
-// In a real multi-user app, this would be tied to a User ID
+// Verify configuration is present
+const isConfigured = firebaseConfig.projectId && firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_ACTUAL_API_KEY";
+
+if (isConfigured) {
+  try {
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+  } catch (error) {
+    console.error("Firebase initialization failed. Operating in Local Mode.", error);
+  }
+}
+
 const DOC_PATH = "prasama_erp/production_v1";
 
 export async function loadCloudData() {
+  if (!db) return null;
   try {
     const docRef = doc(db, DOC_PATH);
     const docSnap = await getDoc(docRef);
@@ -28,25 +41,26 @@ export async function loadCloudData() {
     }
     return null;
   } catch (error) {
-    console.error("Firestore Load Error:", error);
+    console.warn("Cloud Load Error (Check if Firestore API is enabled in Cloud Console):", error);
     return null;
   }
 }
 
 export async function saveCloudData(data: any) {
+  if (!db) return false;
   try {
     const docRef = doc(db, DOC_PATH);
-    // Use setDoc with merge to ensure we don't accidentally wipe data
+    // Overwrite the single state document with the latest client state
     await setDoc(docRef, data, { merge: false });
     return true;
   } catch (error) {
-    console.error("Firestore Sync Error:", error);
+    console.warn("Cloud Sync Error (Check Firestore permissions/API status):", error);
     return false;
   }
 }
 
-// Optional: Listen for real-time updates from other tabs/devices
 export function subscribeToChanges(callback: (data: any) => void) {
+  if (!db) return () => {};
   return onSnapshot(doc(db, DOC_PATH), (doc) => {
     if (doc.exists()) {
       callback(doc.data());
