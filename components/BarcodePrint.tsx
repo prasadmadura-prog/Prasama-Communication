@@ -1,5 +1,5 @@
-
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import JsBarcode from 'jsbarcode';
 import { Product, Category } from '../types';
 
 interface BarcodePrintProps {
@@ -44,7 +44,6 @@ const BarcodePrint: React.FC<BarcodePrintProps> = ({ products = [], categories =
     });
   }, [products, searchTerm, filterCategoryId]);
 
-  // Fix: Explicitly type accumulator and current value as numbers to avoid 'unknown' type error in reduce
   const totalLabels = useMemo(() => 
     Object.values(selections).reduce((a: number, b: number) => a + b, 0)
   , [selections]);
@@ -79,9 +78,9 @@ const BarcodePrint: React.FC<BarcodePrintProps> = ({ products = [], categories =
     if (!printWindow) return;
 
     const labelDim = {
-      SMALL: { h: '30mm', f: '10px' },
-      MEDIUM: { h: '45mm', f: '12px' },
-      LARGE: { h: '60mm', f: '16px' }
+      SMALL: { h: '30mm', f: '10px', bh: 30 },
+      MEDIUM: { h: '45mm', f: '12px', bh: 45 },
+      LARGE: { h: '60mm', f: '16px', bh: 60 }
     }[settings.labelSize];
 
     const paperWidth = settings.paperSize === 'ROLL' ? '80mm' : '210mm';
@@ -110,11 +109,13 @@ const BarcodePrint: React.FC<BarcodePrintProps> = ({ products = [], categories =
             padding: 2mm;
             box-sizing: border-box;
             overflow: hidden;
+            page-break-inside: avoid;
           }
-          .name { font-weight: 800; text-transform: uppercase; font-size: ${labelDim.f}; margin-bottom: 1mm; }
-          .sku { font-family: 'JetBrains Mono', monospace; font-size: calc(${labelDim.f} - 2px); color: #666; }
+          .name { font-weight: 800; text-transform: uppercase; font-size: ${labelDim.f}; margin-bottom: 1mm; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+          .barcode-svg { max-width: 90%; height: auto; margin-top: 1mm; }
           .price { font-weight: 900; font-size: calc(${labelDim.f} + 2px); margin-top: 1.5mm; }
         </style>
+        <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
       </head>
       <body>
         <div class="grid">
@@ -125,22 +126,35 @@ const BarcodePrint: React.FC<BarcodePrintProps> = ({ products = [], categories =
       for(let i=0; i<count; i++) {
         html += `<div class="label">
           ${settings.showName ? `<div class="name">${p.name}</div>` : ''}
-          ${settings.showSKU ? `<div class="sku">${p.sku}</div>` : ''}
+          <svg class="barcode-svg" 
+            jsbarcode-value="${p.sku}" 
+            jsbarcode-format="CODE128"
+            jsbarcode-height="${labelDim.bh}"
+            jsbarcode-fontSize="10"
+            jsbarcode-displayValue="${settings.showSKU}"
+          ></svg>
           ${settings.showPrice ? `<div class="price">Rs. ${p.price.toLocaleString()}</div>` : ''}
         </div>`;
       }
     });
 
-    html += '</div></body></html>';
+    html += `
+        </div>
+        <script>
+          window.onload = function() {
+            JsBarcode(".barcode-svg").init();
+            setTimeout(function() {
+              window.print();
+              window.close();
+            }, 500);
+          }
+        </script>
+      </body>
+      </html>
+    `;
     
     printWindow.document.write(html);
     printWindow.document.close();
-    
-    // Slight delay to ensure fonts/layout are rendered
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
   };
 
   return (

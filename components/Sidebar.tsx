@@ -1,5 +1,6 @@
-
 import React from 'react';
+import { signOut } from 'firebase/auth';
+import { auth } from '../services/database';
 import { View, UserProfile, BankAccount } from '../types';
 
 interface SidebarProps {
@@ -30,6 +31,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, userProfile, ac
     .join('')
     .toUpperCase()
     .slice(0, 2);
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error("Logout failed", err);
+    }
+  };
 
   return (
     <div className="w-[280px] h-full bg-[#0f172a] text-slate-300 flex flex-col border-r border-slate-800/50 shadow-2xl z-20">
@@ -82,7 +91,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, userProfile, ac
         })}
       </nav>
 
-      <div className="p-4 mt-auto border-t border-slate-800/30">
+      <div className="p-4 mt-auto border-t border-slate-800/30 space-y-2">
         <button 
           onClick={onEditProfile}
           className="w-full flex items-center gap-3 bg-slate-900/30 p-4 rounded-2xl border border-slate-800/30 hover:bg-slate-800/60 transition-all text-left group"
@@ -94,6 +103,16 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, userProfile, ac
             <p className="text-xs font-bold text-white truncate">{userProfile.name}</p>
             <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tight truncate">{userProfile.branch}</p>
           </div>
+        </button>
+        
+        <button 
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 bg-rose-500/10 p-3 rounded-2xl border border-rose-500/20 hover:bg-rose-500/20 transition-all text-left group"
+        >
+          <div className="w-8 h-8 rounded-lg bg-rose-500/20 flex items-center justify-center text-xs">
+            🚪
+          </div>
+          <span className="text-[11px] font-black text-rose-400 uppercase tracking-widest">Sign Out</span>
         </button>
       </div>
     </div>

@@ -1,4 +1,3 @@
-
 import React, { useRef } from 'react';
 import { UserProfile } from '../types';
 
@@ -7,7 +6,7 @@ interface SettingsProps {
   setUserProfile: React.Dispatch<React.SetStateAction<UserProfile>>;
   onExport: () => void;
   onImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  syncStatus: string;
+  syncStatus: 'IDLE' | 'SYNCING' | 'ERROR' | 'OFFLINE';
 }
 
 const Settings: React.FC<SettingsProps> = ({ userProfile, setUserProfile, onExport, onImport, syncStatus }) => {
@@ -23,6 +22,26 @@ const Settings: React.FC<SettingsProps> = ({ userProfile, setUserProfile, onExpo
       branch: fd.get('branch') as string
     }));
     alert("Branding details updated successfully!");
+  };
+
+  const getStatusColor = () => {
+    switch(syncStatus) {
+      case 'IDLE': return 'bg-emerald-500';
+      case 'SYNCING': return 'bg-amber-400 animate-pulse';
+      case 'OFFLINE': return 'bg-slate-400';
+      case 'ERROR': return 'bg-rose-500';
+      default: return 'bg-slate-300';
+    }
+  };
+
+  const getStatusText = () => {
+    switch(syncStatus) {
+      case 'IDLE': return 'Cloud Synchronized';
+      case 'SYNCING': return 'Syncing State...';
+      case 'OFFLINE': return 'Local Mode Only';
+      case 'ERROR': return 'Connection Warning';
+      default: return 'Unknown';
+    }
   };
 
   return (
@@ -92,13 +111,25 @@ const Settings: React.FC<SettingsProps> = ({ userProfile, setUserProfile, onExpo
                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl shadow-inner">🛡️</div>
                <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Backup & Recovery</h3>
             </div>
-            <div className="flex items-center gap-2">
-               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Cloud State</span>
-               <div className={`w-2.5 h-2.5 rounded-full ${syncStatus === 'IDLE' ? 'bg-emerald-500' : 'bg-amber-400 animate-pulse'}`}></div>
+            <div className="flex flex-col items-end gap-1">
+               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Connectivity</span>
+               <div className="flex items-center gap-2">
+                 <span className="text-[9px] font-bold text-slate-500">{getStatusText()}</span>
+                 <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor()}`}></div>
+               </div>
             </div>
           </div>
 
           <div className="space-y-4">
+             {syncStatus === 'OFFLINE' && (
+               <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl">
+                 <p className="text-[10px] font-bold text-amber-700 leading-relaxed uppercase">
+                   ⚠️ Cloud Sync is currently disabled. Ensure Firestore API is enabled in your Google Cloud Console for "prasamapos" project. 
+                   System is currently relying on Local Browser Storage.
+                 </p>
+               </div>
+             )}
+
              <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100 flex items-center gap-6 group hover:border-emerald-200 transition-all">
                 <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center text-3xl transition-transform group-hover:scale-110">📥</div>
                 <div className="flex-1">
