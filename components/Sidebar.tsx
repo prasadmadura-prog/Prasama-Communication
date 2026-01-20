@@ -1,6 +1,5 @@
+
 import React from 'react';
-import { signOut } from 'firebase/auth';
-import { auth } from '../services/database';
 import { View, UserProfile, BankAccount } from '../types';
 
 interface SidebarProps {
@@ -9,11 +8,13 @@ interface SidebarProps {
   userProfile: UserProfile;
   accounts: BankAccount[];
   onEditProfile: () => void;
+  onLogout: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, userProfile, accounts, onEditProfile }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, userProfile, accounts, onEditProfile, onLogout }) => {
   const menuItems = [
     { id: 'DASHBOARD', label: 'Dashboard', icon: '📊' },
+    { id: 'AI_ADVISOR', label: 'AI Advisor', icon: '✨' },
     { id: 'POS', label: 'POS', icon: '🛒' },
     { id: 'SALES_HISTORY', label: 'Sales History', icon: '📜' },
     { id: 'INVENTORY', label: 'Inventory', icon: '📦' },
@@ -32,18 +33,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, userProfile, ac
     .toUpperCase()
     .slice(0, 2);
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (err) {
-      console.error("Logout failed", err);
-    }
-  };
-
   return (
     <div className="w-[280px] h-full bg-[#0f172a] text-slate-300 flex flex-col border-r border-slate-800/50 shadow-2xl z-20">
       <div className="px-8 pt-10 pb-6">
-        <div className="flex items-center gap-3 mb-8">
+        <div className="flex items-center gap-3 mb-10">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-[0_0_20px_rgba(79,70,229,0.4)]">
             <span className="font-black text-xl italic">P</span>
           </div>
@@ -54,18 +47,23 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, userProfile, ac
         </div>
 
         {/* Account Summaries - Persistent Top-Left View */}
-        <div className="space-y-3 bg-slate-900/40 p-5 rounded-2xl border border-slate-800/50">
-          <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Live Liquidity</p>
-          {accounts.map(acc => (
-            <div key={acc.id} className="flex flex-col">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter flex items-center gap-1.5">
-                {acc.id === 'cash' ? '💵' : '🏦'} {acc.name}
-              </span>
-              <span className="text-[13px] font-black font-mono text-white">
-                Rs. {Number(acc.balance).toLocaleString()}
-              </span>
-            </div>
-          ))}
+        <div className="space-y-4 bg-slate-900/40 p-5 rounded-3xl border border-slate-800/50">
+          <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em] mb-2">Live Liquidity</p>
+          <div className="space-y-3">
+            {accounts.map(acc => (
+              <div key={acc.id} className="flex flex-col">
+                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5 mb-0.5">
+                  {acc.id === 'cash' ? '💵' : '🏦'} {acc.name}
+                </span>
+                <span className="text-[13px] font-black font-mono text-white">
+                  Rs. {Number(acc.balance).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            ))}
+            {accounts.length === 0 && (
+              <p className="text-[10px] font-black text-slate-600 uppercase italic">No Active Nodes</p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -76,13 +74,13 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, userProfile, ac
             <button
               key={item.id}
               onClick={() => setView(item.id as View)}
-              className={`w-full group flex items-center px-4 py-3 text-[13px] font-bold rounded-2xl transition-all duration-200 ${
+              className={`w-full group flex items-center px-5 py-4 text-[12px] font-black uppercase tracking-widest rounded-2xl transition-all duration-300 ${
                 isActive 
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' 
-                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
+                  ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-600/20' 
+                  : 'text-slate-500 hover:bg-slate-800/50 hover:text-slate-200'
               }`}
             >
-              <span className={`mr-3 text-lg transition-transform group-hover:scale-110 ${isActive ? 'opacity-100' : 'opacity-50'}`}>
+              <span className={`mr-4 text-lg transition-transform group-hover:scale-110 ${isActive ? 'opacity-100' : 'opacity-40'}`}>
                 {item.icon}
               </span>
               {item.label}
@@ -100,19 +98,16 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, userProfile, ac
             {initials}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold text-white truncate">{userProfile.name}</p>
+            <p className="text-xs font-bold text-white truncate uppercase tracking-tighter">{userProfile.name}</p>
             <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tight truncate">{userProfile.branch}</p>
           </div>
         </button>
-        
+
         <button 
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3 bg-rose-500/10 p-3 rounded-2xl border border-rose-500/20 hover:bg-rose-500/20 transition-all text-left group"
+          onClick={onLogout}
+          className="w-full flex items-center gap-3 px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 hover:text-rose-400 transition-all duration-200"
         >
-          <div className="w-8 h-8 rounded-lg bg-rose-500/20 flex items-center justify-center text-xs">
-            🚪
-          </div>
-          <span className="text-[11px] font-black text-rose-400 uppercase tracking-widest">Sign Out</span>
+          <span>🚪</span> Exit Terminal
         </button>
       </div>
     </div>

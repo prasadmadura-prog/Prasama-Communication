@@ -1,7 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from './services/database';
-import { View, Product, Transaction, BankAccount, PurchaseOrder, Vendor, Customer, UserProfile, Category, RecurringExpense, DaySession } from './types';
+
+import React, { useState, useEffect } from 'react';
+import { 
+  subscribeToCollection, 
+  subscribeToDocument, 
+  upsertDocument, 
+  deleteDocument,
+  bulkUpsert,
+  collections as dbCols 
+} from './services/database';
+import { View, Product, Transaction, BankAccount, PurchaseOrder, Vendor, Customer, UserProfile, Category, RecurringExpense, DaySession, POSSession, POStatus } from './types';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import POS from './components/POS';
@@ -13,39 +20,15 @@ import ChequePrint from './components/ChequePrint';
 import BarcodePrint from './components/BarcodePrint';
 import SalesHistory from './components/SalesHistory';
 import Settings from './components/Settings';
-import Auth from './components/Auth';
-import { loadCloudData } from './services/database';
-
-const PERSISTENCE_KEY = 'prasama_erp_production_v5_stable';
-
-const INITIAL_DATA = {
-  version: "5.0",
-  userProfile: {
-    name: "PRASAMA(PVT)LTD",
-    branch: "No 16,Kirulapana Supermarket, Colombo 05",
-    logo: ""
-  },
-  products: [],
-  categories: [],
-  transactions: [],
-  accounts: [
-    { id: "cash", name: "Main Cash Drawer", balance: 0 },
-    { id: "bank_default", name: "Commercial Bank", balance: 0 }
-  ],
-  purchaseOrders: [],
-  vendors: [],
-  customers: [],
-  recurringExpenses: [],
-  daySessions: []
-};
+import Login from './components/Login';
+import AIAdvisor from './components/AIAdvisor';
 
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<'IDLE' | 'SYNCING' | 'ERROR' | 'OFFLINE'>('IDLE');
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restorationPhase, setRestorationPhase] = useState('');
+  const [currentView, setCurrentView] = useState<View>('LOGIN');
   
-  const [currentView, setCurrentView] = useState<View>('DASHBOARD');
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -53,215 +36,205 @@ const App: React.FC = () => {
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_DATA.userProfile);
+  const [userProfile, setUserProfile] = useState<UserProfile>({ name: "PRASAMA ERP", branch: "Main Terminal", isAdmin: false });
   const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
   const [daySessions, setDaySessions] = useState<DaySession[]>([]);
-  const [posSession, setPosSession] = useState({ cart: [], discount: 0, discountPercent: 0, paymentMethod: 'CASH', accountId: 'cash', search: '' });
+  const [posSession, setPosSession] = useState<POSSession>({ 
+    cart: [], 
+    discount: 0, 
+    discountPercent: 0, 
+    paymentMethod: 'CASH', 
+    accountId: 'cash', 
+    search: '',
+    chequeNumber: '',
+    chequeDate: new Date().toISOString().split('T')[0]
+  });
 
-  const saveTimeoutRef = useRef<number | null>(null);
-
-  // Auth State Listener
+  // Handle Local Auth
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setIsLoadingAuth(false);
-    }, (error) => {
-      console.error("Auth observer error:", error);
-      setIsLoadingAuth(false);
-    });
-    return () => unsubscribe();
+    const savedProfile = localStorage.getItem('prasama_local_auth');
+    if (savedProfile) {
+      setUserProfile(JSON.parse(savedProfile));
+      setCurrentView('DASHBOARD');
+    } else {
+      setCurrentView('LOGIN');
+    }
+    setIsLoading(false);
   }, []);
 
-  // Data Initialization
+  // Continuous Local Synchronization
   useEffect(() => {
-    if (isLoadingAuth || !currentUser) return;
+    if (currentView === 'LOGIN' || isLoading) return;
 
-    const initData = async () => {
+    const unsubscribes = [
+      subscribeToCollection(dbCols.products, (data) => setProducts(data as Product[])),
+      subscribeToCollection(dbCols.categories, (data) => setCategories(data as Category[])),
+      subscribeToCollection(dbCols.transactions, (data) => setTransactions(data as Transaction[])),
+      subscribeToCollection(dbCols.accounts, (data) => setAccounts(data as BankAccount[])),
+      subscribeToCollection(dbCols.vendors, (data) => setVendors(data as Vendor[])),
+      subscribeToCollection(dbCols.customers, (data) => setCustomers(data as Customer[])),
+      subscribeToCollection(dbCols.recurringExpenses, (data) => setRecurringExpenses(data as RecurringExpense[])),
+      subscribeToCollection(dbCols.daySessions, (data) => setDaySessions(data as DaySession[])),
+      subscribeToCollection(dbCols.purchaseOrders, (data) => setPurchaseOrders(data as PurchaseOrder[])),
+      subscribeToDocument(dbCols.profile, 'main', (data) => setUserProfile(prev => ({ ...prev, ...data })))
+    ];
+
+    return () => unsubscribes.forEach(unsub => unsub());
+  }, [currentView, isLoading]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('prasama_local_auth');
+    setCurrentView('LOGIN');
+  };
+
+  const handleLogin = (profile: UserProfile) => {
+    localStorage.setItem('prasama_local_auth', JSON.stringify(profile));
+    setUserProfile(profile);
+    setCurrentView('DASHBOARD');
+  };
+
+  const handleReceivePO = async (poId: string) => {
+    const po = purchaseOrders.find(p => p.id === poId);
+    if (!po || po.status !== 'PENDING') return;
+
+    // 1. Update PO Status to RECEIVED
+    const updatedPO: PurchaseOrder = { 
+      ...po, 
+      status: 'RECEIVED' as POStatus, 
+      receivedDate: new Date().toISOString() 
+    };
+    await upsertDocument(dbCols.purchaseOrders, po.id, updatedPO);
+
+    // 2. Automated Stock Injection
+    for (const item of po.items) {
+      const product = products.find(p => p.id === item.productId);
+      if (product) {
+        await upsertDocument(dbCols.products, product.id, {
+          ...product,
+          stock: Number(product.stock) + Number(item.quantity),
+          cost: Number(item.cost) // Update cost basis to the latest PO cost
+        });
+      }
+    }
+
+    // 3. Log Financial Purchase Transaction
+    const txId = `PU-${Date.now()}`;
+    await upsertDocument(dbCols.transactions, txId, {
+      id: txId,
+      date: new Date().toISOString(),
+      type: 'PURCHASE',
+      amount: po.totalAmount,
+      paymentMethod: po.paymentMethod,
+      accountId: po.accountId,
+      vendorId: po.vendorId,
+      description: `Stock Received against PO: ${po.id}`,
+      chequeNumber: po.chequeNumber,
+      chequeDate: po.chequeDate
+    });
+
+    // 4. Update Vendor Aging Balance for Credit Settlements
+    if (po.paymentMethod === 'CREDIT') {
+      const vendor = vendors.find(v => v.id === po.vendorId);
+      if (vendor) {
+        await upsertDocument(dbCols.vendors, vendor.id, {
+          ...vendor,
+          totalBalance: (Number(vendor.totalBalance) || 0) + po.totalAmount
+        });
+      }
+    }
+  };
+
+  const handleExport = () => {
+    const data = {
+      products, categories, transactions, accounts, vendors, customers,
+      purchaseOrders, recurringExpenses, daySessions, userProfile,
+      version: "9.0_LOCAL",
+      timestamp: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `PRASAMA_BACKUP_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
       try {
-        const cloudData = await loadCloudData();
-        const local = localStorage.getItem(PERSISTENCE_KEY);
-        const parsedLocal = local ? JSON.parse(local) : null;
+        const rawContent = event.target?.result as string;
+        const data = JSON.parse(rawContent);
         
-        const source = (parsedLocal && typeof parsedLocal === 'object') ? parsedLocal : cloudData || INITIAL_DATA;
+        setIsRestoring(true);
+        setRestorationPhase('Extracting Backup Archives...');
 
-        if (source) {
-          if (Array.isArray(source.products)) setProducts(source.products);
-          if (Array.isArray(source.categories)) setCategories(source.categories);
-          if (Array.isArray(source.transactions)) setTransactions(source.transactions);
-          if (Array.isArray(source.accounts)) setAccounts(source.accounts);
-          if (Array.isArray(source.purchaseOrders)) setPurchaseOrders(source.purchaseOrders);
-          if (Array.isArray(source.vendors)) setVendors(source.vendors);
-          if (Array.isArray(source.customers)) setCustomers(source.customers);
-          if (source.userProfile) setUserProfile(source.userProfile);
-          if (Array.isArray(source.recurringExpenses)) setRecurringExpenses(source.recurringExpenses);
-          if (Array.isArray(source.daySessions)) setDaySessions(source.daySessions);
-          if (source.posSession) setPosSession(source.posSession);
-        }
-      } catch (err) {
-        console.error("Critical: Storage corruption. Reverting to initial state.", err);
-      } finally {
-        setSyncStatus('OFFLINE');
-        setIsLoading(false);
+        await bulkUpsert(dbCols.products, data.products || []);
+        await bulkUpsert(dbCols.transactions, data.transactions || []);
+        await bulkUpsert(dbCols.accounts, data.accounts || []);
+        await bulkUpsert(dbCols.vendors, data.vendors || []);
+        await bulkUpsert(dbCols.customers, data.customers || []);
+        await bulkUpsert(dbCols.daySessions, data.daySessions || []);
+        await bulkUpsert(dbCols.categories, data.categories || []);
+        await bulkUpsert(dbCols.purchaseOrders, data.purchaseOrders || []);
+        await bulkUpsert(dbCols.recurringExpenses, data.recurringExpenses || []);
+        
+        if (data.userProfile) await upsertDocument(dbCols.profile, 'main', data.userProfile);
+
+        setRestorationPhase('Local Ledger Restored.');
+        setTimeout(() => {
+          setIsRestoring(false);
+          window.location.reload(); 
+        }, 1000);
+      } catch (err: any) {
+        alert(`IMPORT FAILED: ${err.message}`);
+        setIsRestoring(false);
       }
     };
-    initData();
-  }, [currentUser, isLoadingAuth]);
-
-  // Persistence Engine
-  useEffect(() => {
-    if (isLoading || !currentUser) return;
-    if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current);
-
-    saveTimeoutRef.current = window.setTimeout(() => {
-      const dataToSave = { 
-        products, categories, transactions, accounts, purchaseOrders, vendors, customers, userProfile, recurringExpenses, posSession, daySessions 
-      };
-      localStorage.setItem(PERSISTENCE_KEY, JSON.stringify(dataToSave));
-      setSyncStatus('OFFLINE');
-    }, 1000);
-
-    return () => { if (saveTimeoutRef.current) window.clearTimeout(saveTimeoutRef.current); };
-  }, [products, categories, transactions, accounts, purchaseOrders, vendors, customers, userProfile, recurringExpenses, posSession, daySessions, isLoading, currentUser]);
-
-  const applyTransactionImpact = (tx: Transaction) => {
-    if (tx.type === 'TRANSFER' && tx.accountId && tx.destinationAccountId) {
-      setAccounts(prev => prev.map(acc => {
-        if (acc.id === tx.accountId) return { ...acc, balance: Number(acc.balance) - Number(tx.amount) };
-        if (acc.id === tx.destinationAccountId) return { ...acc, balance: Number(acc.balance) + Number(tx.amount) };
-        return acc;
-      }));
-      return;
-    }
-
-    if (tx.paymentMethod !== 'CREDIT' && tx.paymentMethod !== 'CHEQUE') {
-      const targetAccount = tx.accountId || (tx.paymentMethod === 'CASH' ? 'cash' : 'bank_default');
-      setAccounts(prev => prev.map(acc => {
-        if (acc.id === targetAccount) {
-          const isInflow = tx.type === 'SALE' || tx.type === 'CREDIT_PAYMENT';
-          return { ...acc, balance: Number(acc.balance) + (isInflow ? Number(tx.amount) : -Number(tx.amount)) };
-        }
-        return acc;
-      }));
-    }
-
-    if (tx.customerId) {
-      setCustomers(prev => prev.map(c => {
-        if (c.id === tx.customerId) {
-          if (tx.type === 'SALE' && tx.paymentMethod === 'CREDIT') return { ...c, totalCredit: Number(c.totalCredit) + Number(tx.amount) };
-          if (tx.type === 'CREDIT_PAYMENT') return { ...c, totalCredit: Number(c.totalCredit) - Number(tx.amount) };
-        }
-        return c;
-      }));
-    }
-
-    if (tx.items && Array.isArray(tx.items)) {
-      setProducts(prev => prev.map(p => {
-        const item = tx.items?.find((i: any) => i.productId === p.id);
-        if (item) {
-          const adjustment = tx.type === 'SALE' ? -Number(item.quantity) : Number(item.quantity);
-          return { ...p, stock: Number(p.stock) + adjustment };
-        }
-        return p;
-      }));
-    }
+    reader.readAsText(file);
   };
 
-  const addTransaction = (partialTx: any) => {
-    const tx: Transaction = {
-      ...partialTx,
-      id: partialTx.id || `TX-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-      date: partialTx.date || new Date().toISOString(),
-      amount: Number(partialTx.amount) || 0,
-      discount: Number(partialTx.discount) || 0,
-    };
-    setTransactions(prev => [tx, ...prev]);
-    applyTransactionImpact(tx);
-  };
-
-  const handleOpenDay = (openingBalance: number) => {
-    const date = new Date().toISOString().split('T')[0];
-    const newSession: DaySession = { date, openingBalance, expectedClosing: openingBalance, status: 'OPEN' };
-    setDaySessions(prev => [newSession, ...prev.filter(s => s.date !== date)]);
-    setAccounts(prev => prev.map(acc => acc.id === 'cash' ? { ...acc, balance: openingBalance } : acc));
-  };
-
-  const activeSession = daySessions.find(s => s.date === new Date().toISOString().split('T')[0]);
-
-  if (isLoadingAuth) {
+  if (isLoading || isRestoring) {
     return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900">
-        <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-        <p className="text-indigo-400 font-black uppercase tracking-widest text-[10px]">Verifying Station Access...</p>
+      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-white font-black text-xs uppercase tracking-[0.5em]">{restorationPhase || 'Initializing Node...'}</p>
+        </div>
       </div>
     );
   }
 
-  if (!currentUser) return <Auth />;
-
-  if (isLoading) {
-    return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900">
-        <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-        <p className="text-indigo-400 font-black uppercase tracking-widest text-[10px]">Restoring Enterprise State...</p>
-      </div>
-    );
+  if (currentView === 'LOGIN') {
+    return <Login onLogin={handleLogin} onSignUp={handleLogin} userProfile={userProfile} />;
   }
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
-      <div className="no-print h-full flex-shrink-0 relative">
-        <Sidebar 
-          currentView={currentView} 
-          setView={setCurrentView} 
-          userProfile={userProfile} 
-          accounts={accounts} 
-          onEditProfile={() => setCurrentView('SETTINGS')} 
-        />
-      </div>
-      <main className="flex-1 overflow-y-auto relative bg-[#fcfcfc]">
+      <Sidebar 
+        currentView={currentView} 
+        setView={setCurrentView} 
+        userProfile={userProfile} 
+        accounts={accounts} 
+        onEditProfile={() => setCurrentView('SETTINGS')}
+        onLogout={handleLogout}
+      />
+      <main className="flex-1 overflow-y-auto bg-[#fcfcfc]">
         <div className="max-w-7xl mx-auto px-6 py-8 md:px-10 md:py-12">
-            {currentView === 'DASHBOARD' && <Dashboard transactions={transactions} products={products} accounts={accounts} vendors={vendors} categories={categories} />}
-            {currentView === 'POS' && <POS accounts={accounts} products={products} customers={customers} categories={categories} userProfile={userProfile} onUpsertCustomer={(c) => setCustomers(prev => [...prev.filter(old => old.id !== c.id), c])} onUpdateProduct={(p) => setProducts(prev => prev.map(old => old.id === p.id ? p : old))} onCompleteSale={addTransaction} posSession={posSession} setPosSession={setPosSession} activeSession={activeSession} onGoToFinance={() => setCurrentView('FINANCE')} onQuickOpenDay={handleOpenDay} />}
-            {currentView === 'SALES_HISTORY' && <SalesHistory transactions={transactions} products={products} customers={customers} userProfile={userProfile} accounts={accounts} onUpdateTransaction={(tx) => setTransactions(prev => prev.map(t => t.id === tx.id ? tx : t))} onDeleteTransaction={(id) => setTransactions(prev => prev.filter(t => t.id !== id))} />}
-            {currentView === 'INVENTORY' && <Inventory products={products} setProducts={setProducts} categories={categories} vendors={vendors} userProfile={userProfile} onAddCategory={(name) => setCategories(prev => [...prev, {id: `cat-${Date.now()}`, name}])} onDeleteCategory={(id) => setCategories(prev => prev.filter(c => c.id !== id))} onUpsertVendor={(v) => setVendors(prev => [...prev.filter(old => old.id !== v.id), v])} />}
+            {currentView === 'DASHBOARD' && <Dashboard transactions={transactions} products={products} accounts={accounts} vendors={vendors} customers={customers} daySessions={daySessions} purchaseOrders={purchaseOrders} onNavigate={setCurrentView} onUpdateProduct={(p) => upsertDocument(dbCols.products, p.id, p)} />}
+            {currentView === 'POS' && <POS accounts={accounts} products={products} customers={customers} categories={categories} userProfile={userProfile} onUpsertCustomer={(c) => upsertDocument(dbCols.customers, c.id, c)} onUpdateProduct={(p) => upsertDocument(dbCols.products, p.id, p)} onCompleteSale={(tx) => upsertDocument(dbCols.transactions, tx.id, tx)} posSession={posSession} setPosSession={setPosSession} onQuickOpenDay={(bal) => upsertDocument(dbCols.daySessions, new Date().toISOString().split('T')[0], { date: new Date().toISOString().split('T')[0], openingBalance: bal, status: 'OPEN' })} onGoToFinance={() => setCurrentView('FINANCE')} activeSession={daySessions.find(s => s.date === new Date().toISOString().split('T')[0])} />}
+            {currentView === 'SALES_HISTORY' && <SalesHistory transactions={transactions} products={products} customers={customers} userProfile={userProfile} accounts={accounts} onUpdateTransaction={(tx) => upsertDocument(dbCols.transactions, tx.id, tx)} onDeleteTransaction={(id) => deleteDocument(dbCols.transactions, id)} />}
+            {currentView === 'INVENTORY' && <Inventory products={products} categories={categories} vendors={vendors} userProfile={userProfile} onAddCategory={(name) => { const c = {id: `cat-${Date.now()}`, name: name.toUpperCase()}; upsertDocument(dbCols.categories, c.id, c); return c; }} onDeleteCategory={(id) => deleteDocument(dbCols.categories, id)} onUpsertVendor={(v) => upsertDocument(dbCols.vendors, v.id, v)} onUpsertProduct={(p) => upsertDocument(dbCols.products, p.id, p)} onDeleteProduct={(id) => deleteDocument(dbCols.products, id)} />}
+            {currentView === 'FINANCE' && <Finance accounts={accounts} transactions={transactions} daySessions={daySessions} products={products} vendors={vendors} recurringExpenses={recurringExpenses} userProfile={userProfile} onOpenDay={(bal) => upsertDocument(dbCols.daySessions, new Date().toISOString().split('T')[0], { date: new Date().toISOString().split('T')[0], openingBalance: bal, status: 'OPEN' })} onCloseDay={(actual) => upsertDocument(dbCols.daySessions, new Date().toISOString().split('T')[0], { actualClosing: actual, status: 'CLOSED' })} onAddExpense={(tx) => upsertDocument(dbCols.transactions, `EX-${Date.now()}`, { ...tx, date: new Date().toISOString() })} onAddTransfer={(tx) => upsertDocument(dbCols.transactions, `TR-${Date.now()}`, { ...tx, date: new Date().toISOString() })} onUpdateTransaction={(tx) => upsertDocument(dbCols.transactions, tx.id, tx)} onDeleteTransaction={(id) => deleteDocument(dbCols.transactions, id)} onAddRecurring={(re) => upsertDocument(dbCols.recurringExpenses, re.id, re)} onDeleteRecurring={(id) => deleteDocument(dbCols.recurringExpenses, id)} onUpsertAccount={(acc) => upsertDocument(dbCols.accounts, acc.id, acc)} />}
+            {currentView === 'CUSTOMERS' && <Customers customers={customers} transactions={transactions} onUpsertCustomer={(c) => upsertDocument(dbCols.customers, c.id, c)} onReceivePayment={(tx) => upsertDocument(dbCols.transactions, `CP-${Date.now()}`, { ...tx, date: new Date().toISOString() })} />}
+            {currentView === 'AI_ADVISOR' && <AIAdvisor transactions={transactions} products={products} vendors={vendors} accounts={accounts} userProfile={userProfile} />}
+            {currentView === 'SETTINGS' && <Settings userProfile={userProfile} setUserProfile={(val) => upsertDocument(dbCols.profile, 'main', val)} onExport={handleExport} onImport={handleImport} syncStatus="OFFLINE" />}
             {currentView === 'BARCODE_PRINT' && <BarcodePrint products={products} categories={categories} />}
-            {currentView === 'PURCHASES' && <Purchases transactions={transactions} accounts={accounts} products={products} purchaseOrders={purchaseOrders} vendors={vendors} userProfile={userProfile} onUpsertPO={(po) => setPurchaseOrders(prev => [po, ...prev.filter(old => old.id !== po.id)])} onReceivePO={(id) => {
-              const po = purchaseOrders.find(o => o.id === id);
-              if (po) {
-                addTransaction({
-                  type: 'PURCHASE',
-                  amount: po.totalAmount,
-                  description: `Receipt: ${po.id}`,
-                  paymentMethod: po.paymentMethod,
-                  accountId: po.accountId,
-                  vendorId: po.vendorId,
-                  items: po.items.map(i => ({ productId: i.productId, quantity: i.quantity, price: i.cost }))
-                });
-                setPurchaseOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'RECEIVED', receivedDate: new Date().toISOString() } : o));
-              }
-            }} onUpsertVendor={(v) => setVendors(prev => [...prev.filter(old => old.id !== v.id), v])} />}
-            {currentView === 'FINANCE' && <Finance onUpsertAccount={(acc) => setAccounts(prev => [...prev.filter(a => a.id !== acc.id), acc])} transactions={transactions} accounts={accounts} products={products} userProfile={userProfile} vendors={vendors} daySessions={daySessions} onOpenDay={handleOpenDay} onCloseDay={(actual) => setDaySessions(prev => prev.map(s => s.date === new Date().toISOString().split('T')[0] ? { ...s, actualClosing: actual, status: 'CLOSED' } : s))} onAddExpense={(tx) => addTransaction({ ...tx, type: 'EXPENSE' })} onAddTransfer={(tx) => addTransaction({ ...tx, type: 'TRANSFER' })} onUpdateTransaction={(tx) => setTransactions(prev => prev.map(t => t.id === tx.id ? tx : t))} onDeleteTransaction={(id) => setTransactions(prev => prev.filter(t => t.id !== id))} recurringExpenses={recurringExpenses} onAddRecurring={(schedule) => setRecurringExpenses(prev => [...prev, schedule])} onDeleteRecurring={(id) => setRecurringExpenses(prev => prev.filter(s => s.id !== id))} />}
-            {currentView === 'CUSTOMERS' && <Customers customers={customers} transactions={transactions} onUpsertCustomer={(c) => setCustomers(prev => [...prev.filter(old => old.id !== c.id), c])} onReceivePayment={(tx) => addTransaction({ ...tx, type: 'CREDIT_PAYMENT' })} />}
             {currentView === 'CHEQUE_PRINT' && <ChequePrint />}
-            {currentView === 'SETTINGS' && <Settings userProfile={userProfile} setUserProfile={setUserProfile} onExport={() => {
-              const data = { products, categories, transactions, accounts, purchaseOrders, vendors, customers, recurringExpenses, daySessions };
-              const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = url; link.download = `prasama_erp_backup.json`;
-              link.click();
-            }} onImport={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              const reader = new FileReader();
-              reader.onload = (event) => {
-                const data = JSON.parse(event.target?.result as string);
-                if (data.products) setProducts(data.products);
-                if (data.transactions) setTransactions(data.transactions);
-                alert("Data restoration successful!");
-              };
-              reader.readAsText(file);
-            }} syncStatus={syncStatus} />}
+            {currentView === 'PURCHASES' && <Purchases products={products} purchaseOrders={purchaseOrders} vendors={vendors} accounts={accounts} transactions={transactions} userProfile={userProfile} onUpsertPO={(po) => upsertDocument(dbCols.purchaseOrders, po.id, po)} onReceivePO={handleReceivePO} onUpsertVendor={(v) => upsertDocument(dbCols.vendors, v.id, v)} />}
         </div>
       </main>
     </div>

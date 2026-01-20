@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Product, Transaction, Customer, Category, UserProfile, DaySession, BankAccount } from '../types';
+import { Product, Transaction, Customer, Category, UserProfile, DaySession, BankAccount, POSSession } from '../types';
 import Fuse from 'fuse.js';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
@@ -15,15 +15,8 @@ interface POSProps {
   onUpdateProduct: (p: Product) => void;
   onCompleteSale: (tx: any) => void;
   onQuickOpenDay: (opening: number) => void;
-  posSession: {
-    cart: { product: Product; qty: number; price: number; discount: number; discountType: 'AMT' | 'PCT' }[];
-    discount: number;
-    discountPercent: number;
-    paymentMethod: 'CASH' | 'BANK' | 'CARD' | 'CREDIT';
-    accountId: string;
-    search: string;
-  };
-  setPosSession: React.Dispatch<React.SetStateAction<any>>;
+  posSession: POSSession;
+  setPosSession: React.Dispatch<React.SetStateAction<POSSession>>;
   onGoToFinance: () => void;
 }
 
@@ -42,7 +35,7 @@ const POS: React.FC<POSProps> = ({
   setPosSession,
   onGoToFinance
 }) => {
-  const { cart = [], discount = 0, paymentMethod = 'CASH', accountId = 'cash', search = '' } = posSession;
+  const { cart = [], discount = 0, discountPercent = 0, paymentMethod = 'CASH', accountId = 'cash', search = '', chequeNumber = '', chequeDate = '' } = posSession;
   
   const [lastTx, setLastTx] = useState<any>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -69,12 +62,11 @@ const POS: React.FC<POSProps> = ({
   const filteredProducts = useMemo(() => !search.trim() ? products : fuse.search(search).map(r => r.item), [search, fuse, products]);
   const filteredCustomers = useMemo(() => customers.filter(c => c && c.name && (c.name.toLowerCase().includes(customerSearch.toLowerCase()) || (c.phone && c.phone.includes(customerSearch)))), [customers, customerSearch]);
 
-  // CALCULATION ENGINE
   const totals = useMemo(() => {
     let gross = 0;
     let lineSavings = 0;
     
-    const items = cart.map(item => {
+    cart.forEach(item => {
       const itemGross = item.qty * item.price;
       let itemDiscount = 0;
       if (item.discountType === 'PCT') {
@@ -82,18 +74,24 @@ const POS: React.FC<POSProps> = ({
       } else {
         itemDiscount = item.discount;
       }
-      
       gross += itemGross;
       lineSavings += itemDiscount;
-      
-      return { ...item, netPrice: (itemGross - itemDiscount) / item.qty };
     });
 
     const netBeforeGlobal = gross - lineSavings;
-    const finalTotal = Math.max(0, netBeforeGlobal - discount);
     
-    return { gross, lineSavings, netBeforeGlobal, finalTotal };
-  }, [cart, discount]);
+    // Apply Global Discount
+    let globalDiscountAmt = 0;
+    if (discountPercent > 0) {
+      globalDiscountAmt = (netBeforeGlobal * discountPercent) / 100;
+    } else {
+      globalDiscountAmt = discount;
+    }
+
+    const finalTotal = Math.max(0, netBeforeGlobal - globalDiscountAmt);
+    
+    return { gross, lineSavings, netBeforeGlobal, globalDiscountAmt, finalTotal };
+  }, [cart, discount, discountPercent]);
 
   const changeDue = Math.max(0, (parseFloat(cashReceived) || 0) - totals.finalTotal);
   const isDayOpen = activeSession?.status === 'OPEN';
@@ -115,7 +113,7 @@ const POS: React.FC<POSProps> = ({
 
   const addToCart = (product: Product) => {
     if (!isDayOpen || product.stock <= 0) return;
-    setPosSession((prev: any) => {
+    setPosSession((prev: POSSession) => {
       const existing = prev.cart.find((item: any) => item.product.id === product.id);
       if (existing) {
         return { ...prev, cart: prev.cart.map((item: any) => item.product.id === product.id ? { ...item, qty: Math.min(item.qty + 1, product.stock) } : item) };
@@ -125,7 +123,7 @@ const POS: React.FC<POSProps> = ({
   };
 
   const updateCartQty = (id: string, newQty: number) => {
-    setPosSession((prev: any) => {
+    setPosSession((prev: POSSession) => {
       if (newQty <= 0) {
         return { ...prev, cart: prev.cart.filter((item: any) => item.product.id !== id) };
       }
@@ -137,14 +135,14 @@ const POS: React.FC<POSProps> = ({
   };
 
   const updateLinePrice = (id: string, newPrice: number) => {
-    setPosSession((prev: any) => ({
+    setPosSession((prev: POSSession) => ({
       ...prev,
       cart: prev.cart.map((item: any) => item.product.id === id ? { ...item, price: newPrice } : item)
     }));
   };
 
   const updateLineDiscount = (id: string, value: number, type: 'AMT' | 'PCT') => {
-    setPosSession((prev: any) => ({
+    setPosSession((prev: POSSession) => ({
       ...prev,
       cart: prev.cart.map((item: any) => item.product.id === id ? { ...item, discount: value, discountType: type } : item)
     }));
@@ -179,12 +177,14 @@ const POS: React.FC<POSProps> = ({
       id: txId,
       type: 'SALE',
       amount: totals.finalTotal,
-      discount: totals.lineSavings + discount,
+      discount: totals.lineSavings + totals.globalDiscountAmt,
       paymentMethod,
-      accountId: (paymentMethod === 'BANK' || paymentMethod === 'CARD') ? accountId : 'cash',
+      accountId: (paymentMethod === 'BANK' || paymentMethod === 'CARD' || paymentMethod === 'CHEQUE') ? accountId : 'cash',
       customerId,
       description: `Terminal Sale: ${cart.length} line items`,
       date: new Date().toISOString(),
+      chequeNumber: paymentMethod === 'CHEQUE' ? chequeNumber : undefined,
+      chequeDate: paymentMethod === 'CHEQUE' ? chequeDate : undefined,
       items: cart.map(i => {
         const itemGross = i.qty * i.price;
         const itemDiscount = i.discountType === 'PCT' ? (itemGross * i.discount) / 100 : i.discount;
@@ -197,8 +197,17 @@ const POS: React.FC<POSProps> = ({
       })
     };
     onCompleteSale(txPayload);
-    setLastTx({ ...txPayload, subtotal: totals.gross, total: totals.finalTotal });
-    setPosSession({ cart: [], discount: 0, discountPercent: 0, paymentMethod: 'CASH', accountId: 'cash', search: '' });
+    setLastTx({ ...txPayload, subtotal: totals.gross, total: totals.finalTotal, globalDiscount: totals.globalDiscountAmt });
+    setPosSession({ 
+      cart: [], 
+      discount: 0, 
+      discountPercent: 0, 
+      paymentMethod: 'CASH', 
+      accountId: 'cash', 
+      search: '',
+      chequeNumber: '',
+      chequeDate: new Date().toISOString().split('T')[0]
+    });
     setShowCustomerModal(false);
     setShowCashModal(false);
     setShowGlobalDiscountModal(false);
@@ -206,29 +215,23 @@ const POS: React.FC<POSProps> = ({
     setIsProcessing(false);
   };
 
+  // Define the missing handleRegisterNewCustomer function
   const handleRegisterNewCustomer = () => {
-    if (!newCusName || !newCusPhone) {
-      alert("Name and Phone are required for new registration.");
-      return;
-    }
-    const newId = `CUS-${Date.now()}`;
-    const customer: Customer = {
-      id: newId,
+    if (!newCusName.trim()) return;
+    const newCustomer: Customer = {
+      id: `CUS-${Date.now()}`,
       name: newCusName.toUpperCase(),
       phone: newCusPhone,
       email: '',
       address: '',
       totalCredit: 0,
-      creditLimit: parseFloat(newCusLimit) || 50000,
+      creditLimit: parseFloat(newCusLimit) || 50000
     };
-    onUpsertCustomer(customer);
-    completeTransaction(newId);
-    
-    // Reset inputs
+    onUpsertCustomer(newCustomer);
+    completeTransaction(newCustomer.id);
+    setIsAddingCustomer(false);
     setNewCusName('');
     setNewCusPhone('');
-    setNewCusLimit('50000');
-    setIsAddingCustomer(false);
   };
 
   const printReceipt = (tx: any) => {
@@ -244,7 +247,6 @@ const POS: React.FC<POSProps> = ({
     const itemsHtml = tx.items?.map((item: any) => {
       const product = products.find(p => p.id === item.productId);
       const rowGross = item.quantity * item.price;
-      const rowNet = rowGross - (item.discount || 0);
       return `
         <div style="margin-bottom: 8px; border-bottom: 1px dashed #444; padding-bottom: 6px;">
           <div style="font-weight: 800; font-size: 13px; color: #000; text-transform: uppercase;">${product?.name || 'Unknown Item'}</div>
@@ -340,7 +342,6 @@ const POS: React.FC<POSProps> = ({
 
   return (
     <div className="h-[calc(100vh-10rem)] flex gap-8">
-      {/* Product List Section */}
       <div className="flex-1 flex flex-col gap-6">
         <div className="flex gap-4">
           <div className="relative flex-1">
@@ -349,7 +350,7 @@ const POS: React.FC<POSProps> = ({
               placeholder="Scan barcode or search master catalog..." 
               className="w-full pl-12 pr-6 py-4 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none font-semibold text-sm bg-white" 
               value={search} 
-              onChange={(e) => setPosSession((prev:any) => ({...prev, search: e.target.value}))} 
+              onChange={(e) => setPosSession((prev: POSSession) => ({...prev, search: e.target.value}))} 
             />
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
           </div>
@@ -375,7 +376,7 @@ const POS: React.FC<POSProps> = ({
                 <tr key={p.id} onClick={() => addToCart(p)} className="cursor-pointer hover:bg-indigo-50/30 transition-all group">
                   <td className="px-8 py-5">
                     <p className="font-bold text-slate-800 text-[13px] uppercase">{p.name}</p>
-                    <p className="text-[10px] font-mono font-semibold text-indigo-500 mt-0.5">{p.sku}</p>
+                    <p className="text-[10px] font-mono font-bold text-indigo-500 mt-0.5">{p.sku}</p>
                   </td>
                   <td className="px-8 py-5 text-right font-bold text-slate-900">Rs. {(Number(p.price) || 0).toLocaleString()}</td>
                   <td className="px-8 py-5 text-center">
@@ -388,7 +389,6 @@ const POS: React.FC<POSProps> = ({
         </div>
       </div>
 
-      {/* Cart Sidebar */}
       <div className="w-[380px] flex flex-col bg-white rounded-[2rem] border border-slate-200 shadow-xl overflow-hidden">
         <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <h3 className="font-black text-slate-900 uppercase tracking-tight text-xs">Checkout Terminal</h3>
@@ -499,42 +499,61 @@ const POS: React.FC<POSProps> = ({
               </div>
             );
           })}
-          {cart.length === 0 && (
-            <div className="h-full flex flex-col items-center justify-center text-slate-300 py-24">
-              <span className="text-5xl mb-4 grayscale opacity-20">🛒</span>
-              <p className="text-[10px] font-black uppercase tracking-widest">Cart is empty</p>
-            </div>
-          )}
         </div>
 
         <div className="p-6 space-y-4 bg-slate-50 border-t border-slate-100">
-          <div className="grid grid-cols-4 gap-1.5">
-            {['CASH', 'BANK', 'CARD', 'CREDIT'].map(m => (
-              <button key={m} onClick={() => setPosSession((prev:any) => ({...prev, paymentMethod: m}))} className={`py-2 rounded-lg text-[9px] font-black uppercase transition-all border ${paymentMethod === m ? 'bg-slate-900 border-slate-900 text-white shadow-md' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}>{m}</button>
+          <div className="grid grid-cols-5 gap-1.5">
+            {['CASH', 'BANK', 'CARD', 'CREDIT', 'CHEQUE'].map(m => (
+              <button key={m} onClick={() => setPosSession((prev: POSSession) => ({...prev, paymentMethod: m as any}))} className={`py-2 rounded-lg text-[8px] font-black uppercase transition-all border ${paymentMethod === m ? 'bg-slate-900 border-slate-900 text-white shadow-md' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}`}>{m}</button>
             ))}
           </div>
 
-          <div className="space-y-1.5">
+          {paymentMethod === 'CHEQUE' && (
+            <div className="grid grid-cols-2 gap-3 animate-in slide-in-from-top-2">
+              <div className="space-y-1">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Cheque No</label>
+                <input 
+                  type="text" 
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 font-black font-mono text-[10px] outline-none focus:border-indigo-500"
+                  value={chequeNumber}
+                  onChange={(e) => setPosSession((prev: POSSession) => ({...prev, chequeNumber: e.target.value.toUpperCase()}))}
+                  placeholder="CHQ-0000"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Due Date</label>
+                <input 
+                  type="date" 
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 font-bold text-[10px] outline-none focus:border-indigo-500"
+                  value={chequeDate}
+                  onChange={(e) => setPosSession((prev: POSSession) => ({...prev, chequeDate: e.target.value}))}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1.5 pt-2 border-t border-slate-200">
              <div className="flex justify-between items-center text-slate-400 text-[10px] font-black uppercase tracking-widest">
                 <span>Gross Subtotal</span>
                 <span className="font-mono">Rs. {totals.gross.toLocaleString()}</span>
              </div>
              {totals.lineSavings > 0 && (
-               <div className="flex justify-between items-center text-emerald-500 text-[10px] font-black uppercase tracking-widest">
-                  <span>Line Deductions</span>
-                  <span className="font-mono">-Rs. {totals.lineSavings.toLocaleString()}</span>
+               <div className="flex justify-between items-center text-emerald-600 text-[9px] font-black uppercase tracking-widest">
+                  <span>Line Savings</span>
+                  <span className="font-mono">- Rs. {totals.lineSavings.toLocaleString()}</span>
                </div>
              )}
-             <div className="flex justify-between items-center">
-                <button 
-                  onClick={() => setShowGlobalDiscountModal(true)}
-                  className="text-[9px] font-black uppercase tracking-widest px-2 py-1 bg-white border border-slate-200 rounded-lg text-indigo-500 hover:border-indigo-200 transition-all"
-                >
-                  {discount > 0 ? `Cart Disc: -${discount.toLocaleString()}` : '+ Cart Discount'}
-                </button>
-                {discount > 0 && <span className="text-[10px] font-black text-indigo-500 font-mono">-Rs. {discount.toLocaleString()}</span>}
-             </div>
              
+             <div className="flex justify-between items-center group cursor-pointer hover:bg-slate-200/50 p-1 rounded-lg transition-all" onClick={() => setShowGlobalDiscountModal(true)}>
+                <div className="flex items-center gap-2">
+                   <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Invoice Discount</span>
+                   <span className="w-5 h-5 bg-indigo-50 text-indigo-600 rounded-md flex items-center justify-center text-[10px]">✏️</span>
+                </div>
+                <span className={`font-mono text-[10px] font-black ${totals.globalDiscountAmt > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                  - Rs. {totals.globalDiscountAmt.toLocaleString()}
+                </span>
+             </div>
+
              <div className="pt-3 border-t border-slate-200 flex justify-between items-end text-2xl font-black text-slate-900 tracking-tighter">
                 <span className="text-xs uppercase tracking-[0.2em] mb-1.5">Net Pay</span>
                 <span className="font-mono">Rs. {totals.finalTotal.toLocaleString()}</span>
@@ -547,56 +566,71 @@ const POS: React.FC<POSProps> = ({
               else completeTransaction();
             }} 
             disabled={cart.length === 0 || isProcessing} 
-            className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase text-[11px] shadow-xl shadow-indigo-600/20 active:scale-[0.98] disabled:bg-slate-200 disabled:shadow-none transition-all tracking-[0.1em]"
+            className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase text-[11px] shadow-xl shadow-indigo-600/20 active:scale-[0.98] disabled:bg-slate-200 transition-all tracking-[0.1em]"
           >
             Authorize Payment
           </button>
         </div>
       </div>
 
-      {/* Global Discount Modal */}
       {showGlobalDiscountModal && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl">
            <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in duration-300">
-              <div className="p-10 border-b border-slate-50 bg-slate-50 flex justify-between items-center">
-                 <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Global Discount</h3>
-                 <button onClick={() => setShowGlobalDiscountModal(false)} className="text-slate-300 hover:text-slate-950 text-3xl leading-none">&times;</button>
-              </div>
-              <div className="p-10 space-y-6">
+              <div className="p-8 border-b border-slate-50 bg-slate-50 flex justify-between items-center">
                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Discount Amount (LKR)</label>
+                    <h3 className="text-lg font-black text-slate-900 uppercase tracking-tighter">Invoice Discount</h3>
+                    <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mt-0.5">Global Reduction</p>
+                 </div>
+                 <button onClick={() => setShowGlobalDiscountModal(false)} className="text-slate-300 hover:text-slate-900 text-3xl leading-none">&times;</button>
+              </div>
+              <div className="p-8 space-y-6 text-center">
+                 <div className="flex justify-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 mb-4">
+                    <button 
+                      onClick={() => setPosSession(prev => ({ ...prev, discountPercent: 0 }))}
+                      className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${discountPercent === 0 ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400'}`}
+                    >
+                      Absolute (Rs.)
+                    </button>
+                    <button 
+                      onClick={() => setPosSession(prev => ({ ...prev, discountPercent: 5 }))} // Default 5% if toggling
+                      className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${discountPercent > 0 ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400'}`}
+                    >
+                      Percentage (%)
+                    </button>
+                 </div>
+
+                 <div className="space-y-2">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Discount Value</label>
                     <input 
-                      type="number"
                       autoFocus
-                      className="w-full px-6 py-4 rounded-2xl border-2 border-slate-100 text-2xl font-black font-mono text-center text-indigo-600 outline-none focus:border-indigo-500"
-                      value={discount || ''}
-                      onChange={(e) => setPosSession((prev:any) => ({...prev, discount: parseFloat(e.target.value) || 0}))}
-                      placeholder="0.00"
+                      type="number" 
+                      className="w-full px-6 py-4 rounded-2xl border-2 border-slate-100 text-3xl font-black font-mono text-center text-indigo-600 outline-none" 
+                      placeholder="0"
+                      value={discountPercent > 0 ? discountPercent : discount}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        if (discountPercent > 0) {
+                          setPosSession(prev => ({ ...prev, discountPercent: Math.min(val, 100), discount: 0 }));
+                        } else {
+                          setPosSession(prev => ({ ...prev, discount: val, discountPercent: 0 }));
+                        }
+                      }}
                     />
                  </div>
-                 <div className="grid grid-cols-4 gap-2">
-                    {[50, 100, 500, 1000].map(v => (
-                      <button key={v} onClick={() => setPosSession((prev:any) => ({...prev, discount: v}))} className="py-2 rounded-xl bg-slate-50 border border-slate-200 text-[10px] font-black text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all">Rs. {v}</button>
-                    ))}
+
+                 <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                    <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Impact on Invoice</p>
+                    <p className="text-xl font-black text-emerald-700 font-mono">- Rs. {totals.globalDiscountAmt.toLocaleString()}</p>
                  </div>
-                 <button onClick={() => setShowGlobalDiscountModal(false)} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest shadow-lg">Apply Reduction</button>
+
+                 <button 
+                   onClick={() => setShowGlobalDiscountModal(false)}
+                   className="w-full bg-slate-900 text-white font-black py-4 rounded-xl uppercase tracking-widest text-[10px] shadow-xl hover:bg-black transition-all"
+                 >
+                   Apply To Bill
+                 </button>
               </div>
            </div>
-        </div>
-      )}
-
-      {showScanner && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl">
-          <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
-            <div className="p-10 flex justify-between items-center border-b border-slate-100">
-              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Optical Scanner</h3>
-              <button onClick={() => setShowScanner(false)} className="text-slate-300 hover:text-slate-900 text-4xl">&times;</button>
-            </div>
-            <div className="p-8">
-              <div id="reader" className="w-full rounded-2xl overflow-hidden border-4 border-slate-100"></div>
-              <p className="text-center text-[10px] font-black text-slate-400 uppercase tracking-widest mt-6">Position barcode within the frame</p>
-            </div>
-          </div>
         </div>
       )}
 
@@ -610,14 +644,19 @@ const POS: React.FC<POSProps> = ({
                  </div>
                  <button onClick={() => { setShowCashModal(false); setCashReceived(''); }} className="text-slate-300 hover:text-slate-900 text-4xl leading-none">&times;</button>
               </div>
-              <div className="p-10 space-y-8">
+              <form onSubmit={(e) => {
+                 e.preventDefault();
+                 if (!isProcessing && (parseFloat(cashReceived) || 0) >= totals.finalTotal) {
+                    completeTransaction();
+                 }
+              }} className="p-10 space-y-8">
                  <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 flex justify-between items-center">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Payable</span>
                     <span className="text-2xl font-black text-slate-900 font-mono">Rs. {totals.finalTotal.toLocaleString()}</span>
                  </div>
                  <div className="space-y-4">
                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Amount Given by Customer</label>
-                    <input autoFocus type="number" className="w-full px-8 py-5 rounded-3xl border-2 border-slate-100 text-4xl font-black font-mono text-center text-indigo-600 outline-none focus:border-indigo-500" placeholder="0.00" value={cashReceived} onChange={e => setCashReceived(e.target.value)} />
+                    <input autoFocus type="number" className="w-full px-8 py-5 rounded-3xl border-2 border-slate-100 text-4xl font-black font-mono text-center text-indigo-600 outline-none" placeholder="0.00" value={cashReceived} onChange={e => setCashReceived(e.target.value)} />
                  </div>
                  <div className={`p-8 rounded-[2.5rem] transition-all border ${parseFloat(cashReceived) >= totals.finalTotal ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
                     <div className="flex justify-between items-center">
@@ -625,55 +664,60 @@ const POS: React.FC<POSProps> = ({
                        <span className={`text-3xl font-black font-mono ${parseFloat(cashReceived) >= totals.finalTotal ? 'text-emerald-700' : 'text-rose-700'}`}>Rs. {changeDue.toLocaleString()}</span>
                     </div>
                  </div>
-                 <button disabled={isProcessing || (parseFloat(cashReceived) || 0) < totals.finalTotal} onClick={() => completeTransaction()} className="w-full bg-slate-900 text-white font-black py-5 rounded-[1.5rem] uppercase tracking-widest text-xs disabled:opacity-30 shadow-2xl hover:bg-black transition-all">Finalize Sale</button>
+                 <button type="submit" disabled={isProcessing || (parseFloat(cashReceived) || 0) < totals.finalTotal} className="w-full bg-slate-900 text-white font-black py-5 rounded-[1.5rem] uppercase tracking-widest text-xs shadow-2xl hover:bg-black transition-all">Finalize Sale</button>
+              </form>
+           </div>
+        </div>
+      )}
+      
+      {showCustomerModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl">
+           <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
+              <div className="p-8 border-b border-slate-50 bg-slate-50 flex justify-between items-center">
+                 <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Select Credit Account</h3>
+                 <button onClick={() => setShowCustomerModal(false)} className="text-slate-300 hover:text-slate-900 text-4xl leading-none">&times;</button>
+              </div>
+              <div className="p-8 space-y-6">
+                 {!isAddingCustomer ? (
+                   <>
+                    <input 
+                      type="text" 
+                      className="w-full px-6 py-4 rounded-2xl border border-slate-200 outline-none"
+                      placeholder="Search Client..."
+                      value={customerSearch}
+                      onChange={e => setCustomerSearch(e.target.value)}
+                    />
+                    <div className="max-h-64 overflow-y-auto space-y-2">
+                       {filteredCustomers.map(c => (
+                         <button key={c.id} onClick={() => completeTransaction(c.id)} className="w-full flex justify-between items-center p-4 bg-slate-50 rounded-xl hover:bg-indigo-50 transition-all border border-slate-100">
+                            <span className="font-black text-xs uppercase">{c.name}</span>
+                            <span className="text-[10px] font-mono text-slate-400 tracking-tighter">{c.phone}</span>
+                         </button>
+                       ))}
+                    </div>
+                    <button onClick={() => setIsAddingCustomer(true)} className="w-full py-4 text-indigo-600 font-black uppercase text-[10px] tracking-widest border-2 border-dashed border-indigo-100 rounded-xl hover:bg-indigo-50 transition-all">+ Register New Client Account</button>
+                   </>
+                 ) : (
+                   <div className="space-y-4">
+                      <input value={newCusName} onChange={e => setNewCusName(e.target.value)} placeholder="CLIENT NAME" className="w-full px-5 py-3 rounded-xl border border-slate-200 font-bold uppercase" />
+                      <input value={newCusPhone} onChange={e => setNewCusPhone(e.target.value)} placeholder="PHONE" className="w-full px-5 py-3 rounded-xl border border-slate-200 font-mono" />
+                      <div className="flex gap-2">
+                        <button onClick={() => setIsAddingCustomer(false)} className="flex-1 py-3 text-slate-400 font-black uppercase text-[10px]">Back</button>
+                        <button onClick={handleRegisterNewCustomer} className="flex-[2] bg-indigo-600 text-white py-3 rounded-xl font-black uppercase text-[10px]">Complete & Charge</button>
+                      </div>
+                   </div>
+                 )}
               </div>
            </div>
         </div>
       )}
 
-      {showCustomerModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in duration-300">
-            <div className="p-10 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-              <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Assign Credit Account</h3>
-              <button onClick={() => { setShowCustomerModal(false); setIsAddingCustomer(false); }} className="text-slate-300 text-4xl leading-none">&times;</button>
-            </div>
-            <div className="p-10 space-y-6">
-              {!isAddingCustomer ? (
-                <>
-                  <input placeholder="Search client directory..." className="w-full px-6 py-4 rounded-2xl border border-slate-200 font-bold outline-none" value={customerSearch} onChange={e => setCustomerSearch(e.target.value)} />
-                  <div className="max-h-72 overflow-y-auto space-y-3 custom-scrollbar pr-2">
-                    {filteredCustomers.map(c => (
-                      <button key={c.id} onClick={() => completeTransaction(c.id)} className="w-full p-5 rounded-2xl border border-slate-100 hover:bg-indigo-50 text-left transition-all group">
-                        <p className="font-black text-slate-900 text-[13px] uppercase tracking-tight group-hover:text-indigo-600">{c.name}</p>
-                        <p className="text-[10px] text-slate-400 font-bold font-mono">{c.phone} • Due: Rs. {c.totalCredit.toLocaleString()}</p>
-                      </button>
-                    ))}
-                  </div>
-                  <button onClick={() => setIsAddingCustomer(true)} className="w-full bg-slate-950 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-[10px] shadow-lg">+ Register New Client</button>
-                </>
-              ) : (
-                <div className="space-y-6 animate-in slide-in-from-right-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Customer Full Name</label>
-                    <input className="w-full px-6 py-4 rounded-2xl border border-slate-200 font-bold uppercase text-sm" placeholder="E.G. JOHN DOE" value={newCusName} onChange={e => setNewCusName(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Mobile Number</label>
-                    <input className="w-full px-6 py-4 rounded-2xl border border-slate-200 font-black font-mono text-sm" placeholder="+94 XX XXX XXXX" value={newCusPhone} onChange={e => setNewCusPhone(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Internal Credit Limit</label>
-                    <input type="number" className="w-full px-6 py-4 rounded-2xl border border-slate-200 font-black font-mono text-sm" value={newCusLimit} onChange={e => setNewCusLimit(e.target.value)} />
-                  </div>
-                  
-                  <div className="flex flex-col gap-3 pt-4">
-                    <button onClick={handleRegisterNewCustomer} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl uppercase tracking-widest text-[11px] shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Create & Assign Account</button>
-                    <button onClick={() => setIsAddingCustomer(false)} className="w-full text-slate-400 text-[10px] font-black uppercase py-2">Back to Directory</button>
-                  </div>
-                </div>
-              )}
-            </div>
+      {showScanner && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+          <div className="bg-white rounded-[2rem] p-8 w-full max-w-md space-y-6">
+            <h3 className="text-center font-black uppercase tracking-widest text-xs">Scanning Matrix Active</h3>
+            <div id="reader" className="w-full rounded-2xl overflow-hidden border-4 border-slate-900 shadow-2xl"></div>
+            <button onClick={() => setShowScanner(false)} className="w-full py-4 bg-rose-600 text-white font-black uppercase text-[10px] tracking-[0.2em] rounded-xl shadow-lg">Abort Scan</button>
           </div>
         </div>
       )}

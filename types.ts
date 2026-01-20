@@ -9,11 +9,13 @@ export interface Product {
   categoryId: string;
   vendorId?: string;
   lowStockThreshold: number;
+  userId?: string; // Ownership tracking
 }
 
 export interface Category {
   id: string;
   name: string;
+  userId?: string;
 }
 
 export interface Vendor {
@@ -23,7 +25,8 @@ export interface Vendor {
   email: string;
   phone: string;
   address: string;
-  totalBalance: number; // Outstanding amount owed to this supplier
+  totalBalance: number;
+  userId?: string;
 }
 
 export interface Customer {
@@ -34,6 +37,7 @@ export interface Customer {
   address: string;
   totalCredit: number;
   creditLimit: number;
+  userId?: string;
 }
 
 export type POStatus = 'DRAFT' | 'PENDING' | 'RECEIVED' | 'CANCELLED';
@@ -53,9 +57,10 @@ export interface PurchaseOrder {
   status: POStatus;
   totalAmount: number;
   paymentMethod: 'CASH' | 'BANK' | 'CARD' | 'CREDIT' | 'CHEQUE';
-  accountId?: string; // Target bank/cash account ID
+  accountId?: string;
   chequeNumber?: string;
   chequeDate?: string;
+  userId?: string;
 }
 
 export interface Transaction {
@@ -64,15 +69,16 @@ export interface Transaction {
   type: 'SALE' | 'PURCHASE' | 'EXPENSE' | 'CREDIT_PAYMENT' | 'TRANSFER';
   amount: number;
   discount?: number;
-  items?: { productId: string; quantity: number; price: number }[];
+  items?: { productId: string; quantity: number; price: number; discount?: number }[];
   description: string;
   paymentMethod: 'CASH' | 'BANK' | 'CARD' | 'CREDIT' | 'CHEQUE';
-  accountId?: string; // Target (or source for transfers) account ID
-  destinationAccountId?: string; // Target account for transfers
+  accountId?: string;
+  destinationAccountId?: string;
   customerId?: string;
   vendorId?: string;
   chequeNumber?: string;
   chequeDate?: string;
+  userId?: string;
 }
 
 export interface DaySession {
@@ -81,6 +87,7 @@ export interface DaySession {
   expectedClosing: number;
   actualClosing?: number;
   status: 'OPEN' | 'CLOSED';
+  userId?: string;
 }
 
 export interface RecurringExpense {
@@ -92,6 +99,7 @@ export interface RecurringExpense {
   frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY';
   startDate: string;
   lastProcessedDate?: string;
+  userId?: string;
 }
 
 export interface BankAccount {
@@ -99,12 +107,33 @@ export interface BankAccount {
   name: string;
   balance: number;
   accountNumber?: string;
+  userId?: string;
 }
 
 export interface UserProfile {
   name: string;
   branch: string;
   logo?: string;
+  loginUsername?: string;
+  loginPassword?: string;
+  isAdmin?: boolean;
 }
 
-export type View = 'DASHBOARD' | 'POS' | 'SALES_HISTORY' | 'INVENTORY' | 'PURCHASES' | 'FINANCE' | 'CUSTOMERS' | 'CHEQUE_PRINT' | 'BARCODE_PRINT' | 'SETTINGS';
+export type View = 'LOGIN' | 'DASHBOARD' | 'POS' | 'SALES_HISTORY' | 'INVENTORY' | 'PURCHASES' | 'FINANCE' | 'CUSTOMERS' | 'CHEQUE_PRINT' | 'BARCODE_PRINT' | 'SETTINGS' | 'AI_ADVISOR';
+
+export interface POSSession {
+  cart: { 
+    product: Product; 
+    qty: number; 
+    price: number; 
+    discount: number; 
+    discountType: 'AMT' | 'PCT' 
+  }[];
+  discount: number;
+  discountPercent: number;
+  paymentMethod: 'CASH' | 'BANK' | 'CARD' | 'CREDIT' | 'CHEQUE';
+  accountId: string;
+  search: string;
+  chequeNumber?: string;
+  chequeDate?: string;
+}

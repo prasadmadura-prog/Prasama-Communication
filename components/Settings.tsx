@@ -1,3 +1,4 @@
+
 import React, { useRef } from 'react';
 import { UserProfile } from '../types';
 
@@ -19,9 +20,11 @@ const Settings: React.FC<SettingsProps> = ({ userProfile, setUserProfile, onExpo
     setUserProfile(prev => ({
       ...prev,
       name: fd.get('name') as string,
-      branch: fd.get('branch') as string
+      branch: fd.get('branch') as string,
+      loginUsername: (fd.get('loginUsername') as string).toUpperCase(),
+      loginPassword: fd.get('loginPassword') as string,
     }));
-    alert("Branding details updated successfully!");
+    alert("System administration and security records updated successfully!");
   };
 
   const getStatusColor = () => {
@@ -52,7 +55,7 @@ const Settings: React.FC<SettingsProps> = ({ userProfile, setUserProfile, onExpo
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Branding Section */}
+        {/* Branding & Security Section */}
         <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-8">
           <div className="flex items-center gap-4">
              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl shadow-inner">🎨</div>
@@ -60,8 +63,8 @@ const Settings: React.FC<SettingsProps> = ({ userProfile, setUserProfile, onExpo
           </div>
 
           <form onSubmit={handleProfileSubmit} className="space-y-6">
-            <div className="flex items-center gap-8">
-              <div className="w-28 h-28 rounded-[2rem] bg-slate-50 border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden relative group">
+            <div className="flex flex-col md:flex-row items-center gap-8">
+              <div className="w-28 h-28 rounded-[2rem] bg-slate-50 border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden relative group shrink-0">
                 {userProfile.logo ? (
                   <img src={userProfile.logo} className="w-full h-full object-contain p-2" alt="Logo" />
                 ) : (
@@ -89,7 +92,7 @@ const Settings: React.FC<SettingsProps> = ({ userProfile, setUserProfile, onExpo
                   }}
                 />
               </div>
-              <div className="flex-1 space-y-4">
+              <div className="flex-1 space-y-4 w-full">
                  <div>
                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Full Company Name</label>
                    <input name="name" required className="w-full px-5 py-3 rounded-2xl border border-slate-200 font-bold outline-none focus:border-indigo-500 transition-all" defaultValue={userProfile.name} />
@@ -100,7 +103,25 @@ const Settings: React.FC<SettingsProps> = ({ userProfile, setUserProfile, onExpo
                  </div>
               </div>
             </div>
-            <button type="submit" className="w-full bg-slate-950 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-black transition-all active:scale-95">Update Branding Records</button>
+
+            <div className="pt-6 border-t border-slate-100 space-y-4">
+               <div className="flex items-center gap-3 mb-2">
+                 <span className="text-sm">🔐</span>
+                 <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-[0.2em]">Security Credentials</h4>
+               </div>
+               <div className="grid grid-cols-2 gap-4">
+                 <div>
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Admin Username</label>
+                   <input name="loginUsername" required className="w-full px-5 py-3 rounded-2xl border border-slate-200 font-black outline-none focus:border-indigo-500 transition-all uppercase text-xs" defaultValue={userProfile.loginUsername || "ADMIN"} />
+                 </div>
+                 <div>
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Admin Password</label>
+                   <input name="loginPassword" type="password" required className="w-full px-5 py-3 rounded-2xl border border-slate-200 font-black outline-none focus:border-indigo-500 transition-all text-xs" defaultValue={userProfile.loginPassword || "123"} />
+                 </div>
+               </div>
+            </div>
+
+            <button type="submit" className="w-full bg-slate-950 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-black transition-all active:scale-95">Commit Global Modifications</button>
           </form>
         </div>
 
@@ -124,8 +145,7 @@ const Settings: React.FC<SettingsProps> = ({ userProfile, setUserProfile, onExpo
              {syncStatus === 'OFFLINE' && (
                <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl">
                  <p className="text-[10px] font-bold text-amber-700 leading-relaxed uppercase">
-                   ⚠️ Cloud Sync is currently disabled. Ensure Firestore API is enabled in your Google Cloud Console for "prasamapos" project. 
-                   System is currently relying on Local Browser Storage.
+                   ⚠️ Local-First Storage Active. System is currently relying on Local Browser Persistence. Ensure periodic manual backups are performed.
                  </p>
                </div>
              )}
